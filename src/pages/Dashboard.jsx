@@ -1,6 +1,5 @@
 import React from 'react';
 import useRoleAccess from '@/lib/useRoleAccess';
-import { PageLoader } from '@/components/ui/LoadingSpinner';
 
 // Role-specific Dashboards
 import SuperAdminDashboard from '@/components/dashboard/SuperAdminDashboard';
@@ -11,11 +10,10 @@ import ManagerDashboard from '@/components/dashboard/ManagerDashboard';
 import StaffDashboard from '@/components/dashboard/StaffDashboard';
 
 export default function Dashboard() {
-  const { role, isLoading } = useRoleAccess();
+  const { role, isRoleLoading } = useRoleAccess();
 
-  if (isLoading) return <PageLoader />;
-
-  switch (role) {
+  const renderDashboard = () => {
+    switch (role) {
     case 'super_admin':
       return <SuperAdminDashboard />;
     case 'admin':
@@ -29,5 +27,17 @@ export default function Dashboard() {
     case 'user':
     default:
       return <StaffDashboard />;
-  }
+    }
+  };
+
+  return (
+    <>
+      {isRoleLoading && (
+        <div className="mb-4 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-primary">
+          Syncing access...
+        </div>
+      )}
+      {renderDashboard()}
+    </>
+  );
 }

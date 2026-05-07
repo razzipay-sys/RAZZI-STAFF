@@ -12,6 +12,8 @@ import { Save, User, Building2, Clock, Shield, Bell, Upload, Loader2 } from 'luc
 import useRoleAccess from '@/lib/useRoleAccess';
 import supabase from '@/lib/supabase';
 import useAuditLog from '@/lib/useAuditLog';
+import DataState from '@/components/ui/DataState';
+import useTimedLoading from '@/hooks/useTimedLoading';
 
 const DEFAULT_SETTINGS = {
   company_name: 'RazziPay',
@@ -61,7 +63,7 @@ export default function Settings() {
   const { logAction } = useAuditLog();
   
   // Fetch staff profile for avatar and full name
-  const { data: staffProfile, isLoading: loadingProfile } = useQuery({
+  const { data: staffProfile, isLoading: loadingProfile, isError: profileError, error: profileErrorData, refetch: refetchProfile } = useQuery({
     queryKey: ['my-profile', authUser?.email],
     queryFn: async () => {
       if (!authUser?.email) return null;
@@ -77,11 +79,12 @@ export default function Settings() {
     },
     enabled: !!authUser?.email,
     staleTime: 5 * 60 * 1000,
-    retry: 1,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 
   // Fetch app settings from Supabase (only if user is admin)
-  const { data: dbSettings = [], isLoading: loadingSettings } = useQuery({
+  const { data: dbSettings = [], isLoading: loadingSettings, isError: settingsError, error: settingsErrorData, refetch: refetchSettings } = useQuery({
     queryKey: ['app-settings'],
     queryFn: async () => {
       try {
@@ -95,8 +98,11 @@ export default function Settings() {
     },
     enabled: isAdmin,
     staleTime: 5 * 60 * 1000,
-    retry: 1,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
+  const profileLoadingState = useTimedLoading(loadingProfile);
+  const settingsLoadingState = useTimedLoading(isAdmin && loadingSettings);
 
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [uploading, setUploading] = useState(false);
@@ -140,7 +146,6 @@ export default function Settings() {
         salary_reminder_days: settings.salary_reminder_days
       };
 
-      // FIX: Use upsert for app_settings (update by setting_key, not id)
       const promises = [
         supabase.from('app_settings').upsert({
           setting_key: 'company_identity',
@@ -164,8 +169,7 @@ export default function Settings() {
       
       const results = await Promise.all(promises);
       
-      // Check for errors
-      results.forEach((result, idx) => {
+      results.forEach((result) => {
         if (result.error) {
           throw new Error(`Failed to save setting: ${result.error.message}`);
         }
@@ -224,8 +228,7 @@ export default function Settings() {
     }
   };
 
-  // FIX: Changed from (isAdmin && loadingSettings) to (isAdmin && loadingSettings)
-  if (loadingProfile || (isAdmin && loadingSettings)) {
+  if (profileLoadingState.showLoader && !authUser) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Loader2 className="w-8 h-8 text-primary animate-spin" />
@@ -250,6 +253,20 @@ export default function Settings() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
+      {(profileError || profileLoadingState.timedOut) && (
+        <DataState
+          title={profileLoadingState.timedOut ? 'Still loading profile' : 'Profile unavailable'}
+          description={profileErrorData?.message || 'Your account section is using safe fallback details.'}
+          onRetry={refetchProfile}
+        />
+      )}
+      {isAdmin && (settingsError || settingsLoadingState.timedOut) && (
+        <DataState
+          title="Database settings unavailable. Using defaults."
+          description={settingsErrorData?.message || 'You can keep using the page while settings retry.'}
+          onRetry={refetchSettings}
+        />
+      )}
 
       {/* My Account */}
       <Section title="My Account" icon={User}>
@@ -283,6 +300,21 @@ export default function Settings() {
             <div className="flex flex-wrap justify-center sm:justify-start gap-2 mt-2">
               <StatusBadge status={role.replace('_', ' ')} />
               {staffProfile?.department && <StatusBadge status={staffProfile.department} />}
+            </div>
+            <div className="mt-3">
+              <Button asChild variant="outline" size="sm" disabled={uploading || !staffProfile}>
+                <label className="cursor-pointer">
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload Photo
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept="image/*"
+                    onChange={e => e.target.files?.[0] && uploadAvatar(e.target.files[0])}
+                    disabled={uploading || !staffProfile}
+                  />
+                </label>
+              </Button>
             </div>
           </div>
         </div>

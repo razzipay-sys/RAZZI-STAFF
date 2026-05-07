@@ -11,6 +11,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
 import { PageLoader } from '@/components/ui/LoadingSpinner';
+import DataState from '@/components/ui/DataState';
+import useTimedLoading from '@/hooks/useTimedLoading';
 import { toast } from 'sonner';
 import useRoleAccess from '@/lib/useRoleAccess';
 import useAuditLog from '@/lib/useAuditLog';
@@ -28,10 +30,13 @@ export default function Documents() {
   const [typeFilter, setTypeFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
 
-  const { data: documents = [], isLoading } = useQuery({
+  const { data: documents = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['all-documents'],
     queryFn: () => entities.StaffDocument.list('-created_at', 200),
+    retry: false,
+    refetchOnWindowFocus: false,
   });
+  const { showLoader, timedOut } = useTimedLoading(isLoading);
 
   const updateStatus = useMutation({
     mutationFn: async ({ docId, status, staffName }) => {
@@ -86,10 +91,17 @@ export default function Documents() {
     toast.success(`Exported as ${format.toUpperCase()}`);
   };
 
-  if (isLoading) return <PageLoader />;
+  if (showLoader) return <PageLoader />;
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {(isError || timedOut) && (
+        <DataState
+          title={timedOut ? 'Still loading documents' : 'Documents unavailable'}
+          description={error?.message || 'Showing an empty document list for now.'}
+          onRetry={refetch}
+        />
+      )}
       <div className="flex flex-col sm:flex-row gap-4 justify-between items-start">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />

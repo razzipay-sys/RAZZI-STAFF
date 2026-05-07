@@ -2,7 +2,7 @@ import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { entities } from '@/lib/supabaseEntities';
 import { useAuth } from '@/lib/AuthContext';
-import { UserCheck, ClipboardList, CalendarDays, ArrowRight, AlertCircle, TrendingUp } from 'lucide-react';
+import { UserCheck, ClipboardList, CalendarDays, ArrowRight, AlertCircle, TrendingUp, FileText } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,6 +10,7 @@ import StatCard from '@/components/ui/StatCard';
 import { DashCard, DashListRow, EmptyNote } from './DashboardShared';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { format } from 'date-fns';
+import useTimedLoading from '@/hooks/useTimedLoading';
 
 export default function StaffDashboard() {
   const { user } = useAuth();
@@ -45,12 +46,22 @@ export default function StaffDashboard() {
     staleTime: 2 * 60 * 1000,
   });
 
+  const { data: myDocuments = [] } = useQuery({
+    queryKey: ['my-documents', profile?.staff_id],
+    queryFn: () => entities.StaffDocument.filter({ staff_id: profile.staff_id }),
+    enabled: !!profile?.staff_id,
+    staleTime: 2 * 60 * 1000,
+  });
+
   const thisMonthReports = myReports.filter(r => {
     const reportMonth = new Date(r.report_date).getMonth();
     return reportMonth === new Date().getMonth();
   });
 
   const completedReports = myReports.filter(r => r.status === 'Completed');
+  const reportsTimed = useTimedLoading(reportsLoading);
+  const todayReportCount = myReports.filter(r => r.report_date === format(new Date(), 'yyyy-MM-dd')).length;
+  const pendingDocuments = myDocuments.filter(d => !d.document_status || d.document_status === 'Pending' || d.status === 'Pending');
 
   if (!profile) {
     return (
@@ -82,25 +93,38 @@ export default function StaffDashboard() {
           title="My Reports This Month" 
           value={thisMonthReports.length} 
           icon={ClipboardList}
-          loading={reportsLoading}
+          loading={reportsTimed.showLoader}
         />
         <StatCard 
-          title="Reports Today" 
-          value={myReports.filter(r => r.report_date === format(new Date(), 'yyyy-MM-dd')).length} 
+          title="My Reports Today" 
+          value={todayReportCount} 
           icon={TrendingUp}
-          loading={reportsLoading}
+          loading={reportsTimed.showLoader}
         />
         <StatCard 
-          title="Completed" 
+          title="My Completed Tasks" 
           value={completedReports.length} 
           icon={UserCheck}
-          loading={reportsLoading}
+          loading={reportsTimed.showLoader}
         />
         <StatCard 
-          title="Pending Reviews" 
+          title="My Pending Reviews" 
           value={myPendingReviews.length} 
           icon={AlertCircle}
-          loading={reportsLoading}
+          loading={reportsTimed.showLoader}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard 
+          title="My Documents Pending" 
+          value={pendingDocuments.length} 
+          icon={FileText}
+        />
+        <StatCard 
+          title="My Profile Completion" 
+          value={`${profile?.profile_completion_percentage || 0}%`} 
+          icon={UserCheck}
         />
       </div>
 

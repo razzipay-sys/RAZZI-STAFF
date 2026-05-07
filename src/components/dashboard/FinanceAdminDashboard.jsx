@@ -1,11 +1,12 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { entities } from '@/lib/supabaseEntities';
-import { Users, DollarSign, AlertTriangle, CreditCard, TrendingUp } from 'lucide-react';
+import { Users, DollarSign, AlertTriangle, CreditCard, TrendingUp, Clock } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import StatCard from '@/components/ui/StatCard';
 import { DashCard, DashListRow } from './DashboardShared';
+import useTimedLoading from '@/hooks/useTimedLoading';
 
 export default function FinanceAdminDashboard() {
   const { data: staffList = [], isLoading: staffLoading } = useQuery({
@@ -22,6 +23,7 @@ export default function FinanceAdminDashboard() {
     },
     staleTime: 5 * 60 * 1000,
   });
+  const staffTimed = useTimedLoading(staffLoading);
 
   const missingBankDetails = staffList.filter(s => {
     const bd = bankDetails.find(b => b.staff_id === s.staff_id);
@@ -29,6 +31,14 @@ export default function FinanceAdminDashboard() {
   });
 
   const incompleteProfiles = staffList.filter(s => (s.profile_completion_percentage || 0) < 80);
+  const incompleteBankRecords = bankDetails.filter(b => !b.account_number || !b.bank_name || !b.account_name);
+  const today = new Date().getDate();
+  const salaryReminders = bankDetails.filter(b => {
+    if (!b.salary_payment_date) return false;
+    const daysUntil = b.salary_payment_date - today;
+    return daysUntil >= 0 && daysUntil <= 5;
+  });
+  const pendingPayrollItems = missingBankDetails.length + incompleteBankRecords.length;
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -49,25 +59,40 @@ export default function FinanceAdminDashboard() {
           title="Total Staff" 
           value={staffList.length} 
           icon={Users}
-          loading={staffLoading}
+          loading={staffTimed.showLoader}
         />
         <StatCard 
           title="Missing Bank Details" 
           value={missingBankDetails.length} 
           icon={CreditCard}
-          loading={staffLoading}
+          loading={staffTimed.showLoader}
         />
         <StatCard 
-          title="Active Salaries" 
-          value={staffList.filter(s => s.employment_status === 'Active').length} 
+          title="Salary Reminders" 
+          value={salaryReminders.length} 
           icon={TrendingUp}
-          loading={staffLoading}
+          loading={staffTimed.showLoader}
+        />
+        <StatCard 
+          title="Pending Payroll Items" 
+          value={pendingPayrollItems} 
+          icon={AlertTriangle}
+          loading={staffTimed.showLoader}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard 
+          title="Incomplete Bank Records" 
+          value={incompleteBankRecords.length} 
+          icon={Clock}
+          loading={staffTimed.showLoader}
         />
         <StatCard 
           title="Incomplete Profiles" 
           value={incompleteProfiles.length} 
           icon={AlertTriangle}
-          loading={staffLoading}
+          loading={staffTimed.showLoader}
         />
       </div>
 

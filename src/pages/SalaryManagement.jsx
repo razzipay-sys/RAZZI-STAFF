@@ -13,6 +13,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import EmptyState from '@/components/ui/EmptyState';
 import { PageLoader } from '@/components/ui/LoadingSpinner';
+import DataState from '@/components/ui/DataState';
+import useTimedLoading from '@/hooks/useTimedLoading';
 import { toast } from 'sonner';
 import useRoleAccess from '@/lib/useRoleAccess';
 import useAuditLog from '@/lib/useAuditLog';
@@ -32,11 +34,14 @@ export default function SalaryManagement() {
     tax_deduction: 0, pension_deduction: 0, other_deductions: 0, finance_notes: ''
   });
 
-  const { data: bankRecords = [], isLoading } = useQuery({
+  const { data: bankRecords = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['bank-details'],
     queryFn: () => entities.StaffBankDetails.list('-created_at', 200),
     enabled: hasPermission('canViewSalary'),
+    retry: false,
+    refetchOnWindowFocus: false,
   });
+  const { showLoader, timedOut } = useTimedLoading(isLoading);
 
   const { data: staffList = [] } = useQuery({
     queryKey: ['staff-profiles'],
@@ -138,10 +143,17 @@ export default function SalaryManagement() {
     return <EmptyState icon={DollarSign} title="Access Restricted" description="You don't have permission to view salary information." />;
   }
 
-  if (isLoading) return <PageLoader />;
+  if (showLoader) return <PageLoader />;
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {(isError || timedOut) && (
+        <DataState
+          title={timedOut ? 'Still loading salary data' : 'Salary data unavailable'}
+          description={error?.message || 'Showing an empty salary list for now.'}
+          onRetry={refetch}
+        />
+      )}
       <div className="flex flex-col sm:flex-row gap-4 justify-between">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />

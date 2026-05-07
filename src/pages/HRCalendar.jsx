@@ -5,14 +5,19 @@ import { format, parseISO, isAfter, isBefore, addDays } from 'date-fns';
 import { Cake, UserCheck, CalendarDays, Clock } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageLoader } from '@/components/ui/LoadingSpinner';
+import DataState from '@/components/ui/DataState';
+import useTimedLoading from '@/hooks/useTimedLoading';
 
 export default function HRCalendar() {
-  const { data: staffList = [], isLoading } = useQuery({
+  const { data: staffList = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['staff-profiles'],
     queryFn: () => entities.StaffProfile.list('-created_at', 200),
+    retry: false,
+    refetchOnWindowFocus: false,
   });
+  const { showLoader, timedOut } = useTimedLoading(isLoading);
 
-  if (isLoading) return <PageLoader />;
+  if (showLoader) return <PageLoader />;
 
   const now = new Date();
   const activeStaff = staffList.filter(s => s.employment_status === 'Active');
@@ -93,6 +98,13 @@ export default function HRCalendar() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {(isError || timedOut) && (
+        <DataState
+          title={timedOut ? 'Still loading HR calendar' : 'HR calendar unavailable'}
+          description={error?.message || 'Showing empty calendar sections for now.'}
+          onRetry={refetch}
+        />
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {sections.map(section => (
           <Card key={section.title}>

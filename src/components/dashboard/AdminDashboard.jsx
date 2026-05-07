@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import StatCard from '@/components/ui/StatCard';
 import { DashCard, DashListRow } from './DashboardShared';
 import { format } from 'date-fns';
+import useTimedLoading from '@/hooks/useTimedLoading';
 
 export default function AdminDashboard() {
   const { data: staffList = [], isLoading: staffLoading } = useQuery({
@@ -41,6 +42,8 @@ export default function AdminDashboard() {
   const completedToday = todayReports.filter(r => r.status === 'Completed');
   const blockedTasks = todayReports.filter(r => r.status === 'Blocked');
   const pendingCVs = staffList.length - userDocuments.filter(d => d.document_type === 'CV').length;
+  const staffTimed = useTimedLoading(staffLoading);
+  const reportsTimed = useTimedLoading(reportsLoading);
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -61,25 +64,25 @@ export default function AdminDashboard() {
           title="Total Staff" 
           value={staffList.length} 
           icon={Users}
-          loading={staffLoading}
+          loading={staffTimed.showLoader}
         />
         <StatCard 
           title="Reports Today" 
           value={todayReports.length} 
           icon={ClipboardList}
-          loading={reportsLoading}
+          loading={reportsTimed.showLoader}
         />
         <StatCard 
           title="Completed Today" 
           value={completedToday.length} 
           icon={CheckCircle2}
-          loading={reportsLoading}
+          loading={reportsTimed.showLoader}
         />
         <StatCard 
           title="Blocked Tasks" 
           value={blockedTasks.length} 
           icon={AlertTriangle}
-          loading={reportsLoading}
+          loading={reportsTimed.showLoader}
         />
       </div>
 
@@ -93,19 +96,19 @@ export default function AdminDashboard() {
           title="Pending Reviews" 
           value={pendingReview.length} 
           icon={AlertCircle}
-          loading={reportsLoading}
+          loading={reportsTimed.showLoader}
         />
         <StatCard 
           title="Due for Confirmation" 
           value={staffList.filter(s => s.confirmation_status === 'Pending').length} 
           icon={Clock}
-          loading={staffLoading}
+          loading={staffTimed.showLoader}
         />
         <StatCard 
           title="Incomplete Profiles" 
           value={incompleteProfiles.length} 
           icon={ShieldAlert}
-          loading={staffLoading}
+          loading={staffTimed.showLoader}
         />
       </div>
 

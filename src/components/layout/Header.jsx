@@ -28,6 +28,9 @@ export default function Header({ sidebarCollapsed, toggleSidebar, title }) {
       return profiles[0] || null;
     },
     enabled: !!user?.email,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 
   const [darkMode, setDarkMode] = React.useState(() => {

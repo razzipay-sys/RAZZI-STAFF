@@ -11,11 +11,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Label } from '@/components/ui/label';
 import EmptyState from '@/components/ui/EmptyState';
 import { PageLoader } from '@/components/ui/LoadingSpinner';
+import DataState from '@/components/ui/DataState';
 import StatusBadge from '@/components/ui/StatusBadge';
 import useRoleAccess from '@/lib/useRoleAccess';
 import useAuditLog from '@/lib/useAuditLog';
 import { entities } from '@/lib/supabaseEntities';
 import supabase from '@/lib/supabase';
+import useTimedLoading from '@/hooks/useTimedLoading';
 
 const ROLES = [
   { value: 'user', label: 'Staff' },
@@ -31,19 +33,27 @@ export default function AccessControl() {
   const { role: currentUserRole, isSuperAdmin, hasPermission } = useRoleAccess();
   const { logAction } = useAuditLog();
   const [search, setSearch] = useState('');
+  const [manualEmail, setManualEmail] = useState('');
+  const [manualRole, setManualRole] = useState('user');
   const [selectedUser, setSelectedUser] = useState(null);
 
-  const { data: staffList = [], isLoading: loadingStaff } = useQuery({
+  const { data: staffList = [], isLoading: loadingStaff, isError: staffError, error: staffErrorData, refetch: refetchStaff } = useQuery({
     queryKey: ['staff-profiles-access'],
     queryFn: () => entities.StaffProfile.list('-created_at', 500),
     staleTime: 2 * 60 * 1000,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 
-  const { data: userRoles = [], isLoading: loadingRoles } = useQuery({
+  const { data: userRoles = [], isLoading: loadingRoles, isError: rolesError, error: rolesErrorData, refetch: refetchRoles } = useQuery({
     queryKey: ['user-roles-list'],
     queryFn: () => entities.UserRole.list(),
     staleTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
+  const staffLoadingState = useTimedLoading(loadingStaff);
+  const rolesLoadingState = useTimedLoading(loadingRoles);
 
   const roleByEmail = useMemo(() => (
     new Map(userRoles.map(role => [role.email?.toLowerCase(), role]))
@@ -107,6 +117,48 @@ export default function AccessControl() {
     },
   });
 
+  const assignEmailMutation = useMutation({
+    mutationFn: async () => {
+      const email = manualEmail.trim().toLowerCase();
+      if (!email) throw new Error('Enter an email address');
+      if (manualRole === 'super_admin' && !isSuperAdmin) {
+        throw new Error('Only Super Admins can assign the Super Admin role');
+      }
+
+      const existing = roleByEmail.get(email);
+      const record = {
+        email,
+        role: manualRole,
+        assigned_by: currentUserRole,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (existing) {
+        const { error } = await supabase.from('user_roles').update(record).eq('id', existing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('user_roles').insert(record);
+        if (error) throw error;
+      }
+
+      await logAction({
+        actionType: 'ROLE_CHANGE',
+        entityType: 'UserRole',
+        entityName: email,
+        notes: `Email-based role assignment to ${manualRole}`,
+      });
+
+      return { email };
+    },
+    onSuccess: ({ email }) => {
+      queryClient.invalidateQueries({ queryKey: ['user-roles-list'] });
+      queryClient.invalidateQueries({ queryKey: ['user-role', email] });
+      setManualEmail('');
+      toast.success('Role assigned by email');
+    },
+    onError: (err) => toast.error(err.message || 'Failed to assign role'),
+  });
+
   const filteredStaff = staffList.filter(staff => {
     if (!search) return true;
     const q = search.toLowerCase();
@@ -122,7 +174,7 @@ export default function AccessControl() {
     return <EmptyState icon={Shield} title="Access Restricted" description="You don't have permission to manage roles." />;
   }
 
-  if (loadingStaff || loadingRoles) return <PageLoader />;
+  if (staffLoadingState.showLoader && staffList.length === 0) return <PageLoader />;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -132,6 +184,21 @@ export default function AccessControl() {
           <p className="text-muted-foreground">Manage user roles and system permissions.</p>
         </div>
       </div>
+
+      {(staffError || staffLoadingState.timedOut) && (
+        <DataState
+          title={staffLoadingState.timedOut ? 'Still loading staff profiles' : 'Staff profiles unavailable'}
+          description={staffErrorData?.message || 'Role assignment by email is still available below.'}
+          onRetry={refetchStaff}
+        />
+      )}
+      {(rolesError || rolesLoadingState.timedOut) && (
+        <DataState
+          title={rolesLoadingState.timedOut ? 'Still loading role list' : 'Role list unavailable'}
+          description={rolesErrorData?.message || 'Staff profiles are shown without assigned role details.'}
+          onRetry={refetchRoles}
+        />
+      )}
 
       <div className="flex items-center gap-4">
         <div className="relative flex-1 max-w-md">
@@ -144,6 +211,46 @@ export default function AccessControl() {
           />
         </div>
       </div>
+
+      <Card className="p-4 border-white/5 bg-white/5">
+        <form
+          className="grid gap-3 md:grid-cols-[1fr_180px_auto] md:items-end"
+          onSubmit={(event) => {
+            event.preventDefault();
+            assignEmailMutation.mutate();
+          }}
+        >
+          <div className="space-y-2">
+            <Label>Assign role by email</Label>
+            <Input
+              type="email"
+              placeholder="registered.user@example.com"
+              value={manualEmail}
+              onChange={event => setManualEmail(event.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Use this when a registered user does not have a staff profile yet. Role resolution works by email.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label>Role</Label>
+            <Select value={manualRole} onValueChange={setManualRole}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {ROLES.map(role => (
+                  <SelectItem key={role.value} value={role.value} disabled={role.value === 'super_admin' && !isSuperAdmin}>
+                    {role.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button type="submit" disabled={assignEmailMutation.isPending}>
+            {assignEmailMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+            Assign Role
+          </Button>
+        </form>
+      </Card>
 
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">

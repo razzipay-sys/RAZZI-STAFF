@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import StatCard from '@/components/ui/StatCard';
 import { DashCard, DashListRow } from './DashboardShared';
 import { format } from 'date-fns';
+import useTimedLoading from '@/hooks/useTimedLoading';
 
 export default function SuperAdminDashboard() {
   const { data: staffList = [], isLoading: staffLoading, error: staffError } = useQuery({
@@ -52,6 +53,9 @@ export default function SuperAdminDashboard() {
   const pendingReview = todayReports.filter(r => r.review_status === 'Pending Review');
   const pendingCVs = staffList.length - userDocuments.filter(d => d.document_type === 'CV').length;
   const dueForConfirmation = staffList.filter(s => s.confirmation_status === 'Pending');
+  const staffTimed = useTimedLoading(staffLoading);
+  const reportsTimed = useTimedLoading(reportsLoading);
+  const docsTimed = useTimedLoading(docsLoading);
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -85,26 +89,26 @@ export default function SuperAdminDashboard() {
           title="Total Staff" 
           value={staffList.length} 
           icon={Users}
-          loading={staffLoading}
+          loading={staffTimed.showLoader}
           error={staffError}
         />
         <StatCard 
           title="Reports Today" 
           value={todayReports.length} 
           icon={ClipboardList}
-          loading={reportsLoading}
+          loading={reportsTimed.showLoader}
         />
         <StatCard 
           title="Completed Today" 
           value={completedToday.length} 
           icon={CheckCircle2}
-          loading={reportsLoading}
+          loading={reportsTimed.showLoader}
         />
         <StatCard 
           title="Blocked Tasks" 
           value={blockedTasks.length} 
           icon={AlertTriangle}
-          loading={reportsLoading}
+          loading={reportsTimed.showLoader}
           description={blockedTasks.length > 0 ? 'Needs attention' : 'All clear'}
         />
       </div>
@@ -114,25 +118,25 @@ export default function SuperAdminDashboard() {
           title="Pending CVs" 
           value={pendingCVs} 
           icon={FileText}
-          loading={docsLoading}
+          loading={docsTimed.showLoader}
         />
         <StatCard 
           title="Pending Reviews" 
           value={pendingReview.length} 
           icon={AlertCircle}
-          loading={reportsLoading}
+          loading={reportsTimed.showLoader}
         />
         <StatCard 
           title="Due for Confirmation" 
           value={dueForConfirmation.length} 
           icon={FileCheck}
-          loading={staffLoading}
+          loading={staffTimed.showLoader}
         />
         <StatCard 
           title="Incomplete Profiles" 
           value={incompleteProfiles.length} 
           icon={Clock}
-          loading={staffLoading}
+          loading={staffTimed.showLoader}
         />
       </div>
 

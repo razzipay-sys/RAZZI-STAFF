@@ -15,6 +15,8 @@ import { Textarea } from '@/components/ui/textarea';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
 import { PageLoader } from '@/components/ui/LoadingSpinner';
+import DataState from '@/components/ui/DataState';
+import useTimedLoading from '@/hooks/useTimedLoading';
 import { toast } from 'sonner';
 import useRoleAccess from '@/lib/useRoleAccess';
 import useAuditLog from '@/lib/useAuditLog';
@@ -45,10 +47,13 @@ export default function WorkflowReports() {
   const [reviewDialog, setReviewDialog] = useState(null);
   const [reviewComment, setReviewComment] = useState('');
 
-  const { data: reports = [], isLoading } = useQuery({
+  const { data: reports = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['workflow-reports'],
     queryFn: () => entities.DailyWorkflowReport.list('-report_date', 200),
+    retry: false,
+    refetchOnWindowFocus: false,
   });
+  const { showLoader, timedOut } = useTimedLoading(isLoading);
 
   const { data: staffList = [] } = useQuery({
     queryKey: ['staff-profiles'],
@@ -143,10 +148,17 @@ export default function WorkflowReports() {
 
   const updateField = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
-  if (isLoading) return <PageLoader />;
+  if (showLoader) return <PageLoader />;
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {(isError || timedOut) && (
+        <DataState
+          title={timedOut ? 'Still loading reports' : 'Workflow reports unavailable'}
+          description={error?.message || 'Showing an empty workflow list for now.'}
+          onRetry={refetch}
+        />
+      )}
       {/* Actions */}
       <div className="flex flex-col sm:flex-row gap-4 justify-between">
         <div className="relative flex-1 max-w-md">

@@ -11,6 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import EmptyState from '@/components/ui/EmptyState';
 import { PageLoader } from '@/components/ui/LoadingSpinner';
+import DataState from '@/components/ui/DataState';
+import useTimedLoading from '@/hooks/useTimedLoading';
 import useRoleAccess from '@/lib/useRoleAccess';
 import useAuditLog from '@/lib/useAuditLog';
 import { exportToCSV, exportToPDF } from '@/lib/exportUtils';
@@ -22,11 +24,14 @@ export default function AuditLogs() {
   const [search, setSearch] = useState('');
   const [actionFilter, setActionFilter] = useState('All');
 
-  const { data: logs = [], isLoading } = useQuery({
+  const { data: logs = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['audit-logs'],
     queryFn: () => entities.AuditLog.list('-created_at', 200),
     enabled: hasPermission('canViewAuditLogs'),
+    retry: false,
+    refetchOnWindowFocus: false,
   });
+  const { showLoader, timedOut } = useTimedLoading(isLoading);
 
   const filtered = useMemo(() => {
     return logs.filter(l => {
@@ -72,7 +77,7 @@ export default function AuditLogs() {
     return <EmptyState icon={Shield} title="Access Restricted" description="You don't have permission to view audit logs." />;
   }
 
-  if (isLoading) return <PageLoader />;
+  if (showLoader) return <PageLoader />;
 
   const actionStyles = {
     'CREATE': 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
@@ -87,6 +92,13 @@ export default function AuditLogs() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {(isError || timedOut) && (
+        <DataState
+          title={timedOut ? 'Still loading audit logs' : 'Audit logs unavailable'}
+          description={error?.message || 'Showing an empty audit log for now.'}
+          onRetry={refetch}
+        />
+      )}
       <div className="flex flex-col sm:flex-row gap-4 justify-between items-start">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />

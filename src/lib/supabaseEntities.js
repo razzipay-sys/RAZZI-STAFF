@@ -60,6 +60,35 @@ function buildEntity(tableName) {
       return data;
     },
 
+    async listSafe(orderBy = '-created_at', limit = 500) {
+      try {
+        const data = await this.list(orderBy, limit);
+        return { data, error: null };
+      } catch (error) {
+        return { data: [], error };
+      }
+    },
+
+    async filterSafe(filters = {}, orderBy = '-created_at', limit = 500) {
+      try {
+        const data = await this.filter(filters, orderBy, limit);
+        return { data, error: null };
+      } catch (error) {
+        return { data: [], error };
+      }
+    },
+
+    async maybeSingle(filters = {}) {
+      let query = supabase.from(tableName).select('*').limit(1);
+      Object.entries(filters).forEach(([key, val]) => {
+        if (val !== undefined && val !== null) query = query.eq(key, val);
+      });
+
+      const { data, error } = await query.maybeSingle();
+      if (error) return { data: null, error };
+      return { data: data || null, error: null };
+    },
+
     /** Create a new record */
     async create(record) {
       const { data, error } = await supabase
@@ -88,6 +117,16 @@ function buildEntity(tableName) {
       const { error } = await supabase.from(tableName).delete().eq('id', id);
       if (error) throw error;
       return { success: true };
+    },
+
+    async upsert(record, onConflict) {
+      const { data, error } = await supabase
+        .from(tableName)
+        .upsert(record, onConflict ? { onConflict } : undefined)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
     },
   };
 }

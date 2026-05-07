@@ -2,6 +2,17 @@ import { useAuth } from './AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import supabase from './supabase';
 
+const ROLE_LOOKUP_TIMEOUT_MS = 5000;
+
+const withTimeout = (promise, timeoutMs) => (
+  Promise.race([
+    promise,
+    new Promise((resolve) => {
+      setTimeout(() => resolve({ data: null, error: new Error('Role lookup timed out') }), timeoutMs);
+    }),
+  ])
+);
+
 export const ROLE_PERMISSIONS = {
   super_admin: {
     canViewAllStaff: true, canEditStaff: true, canViewSalary: true,
@@ -49,47 +60,57 @@ export const ROLE_PERMISSIONS = {
 
 export default function useRoleAccess() {
   const { user } = useAuth();
+  const superAdminEmail = import.meta.env.VITE_SUPER_ADMIN_EMAIL;
+  const isSuperAdminOverride = !!superAdminEmail && user?.email?.toLowerCase() === superAdminEmail.toLowerCase();
+  const fallbackRole = isSuperAdminOverride
+    ? 'super_admin'
+    : user?.user_metadata?.role || (user ? 'user' : 'guest');
 
-  // Fetch role from user_roles table with comprehensive error handling
-  const { data: dbRoleData, isLoading: loadingRole } = useQuery({
+  const {
+    data: dbRoleData,
+    isFetching: isRoleLoading,
+    error: roleError,
+  } = useQuery({
     queryKey: ['user-role', user?.email],
     queryFn: async () => {
       if (!user?.email) return null;
-      try {
-        const { data, error } = await supabase
+
+      const { data, error } = await withTimeout(
+        supabase
           .from('user_roles')
           .select('*')
           .ilike('email', user.email)
-          .maybeSingle();
+          .maybeSingle(),
+        ROLE_LOOKUP_TIMEOUT_MS
+      );
 
-        if (error) throw error;
-        return data || null;
-      } catch (err) {
+      if (error) {
         if (import.meta.env.DEV) {
-          console.warn('[useRoleAccess] DB role fetch failed:', err.message);
+          console.warn('[useRoleAccess] DB role unavailable:', error.message);
         }
         return null;
       }
+
+      return data || null;
     },
     enabled: !!user?.email,
-    staleTime: 0,
-    retry: 1,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    networkMode: 'online',
     gcTime: 10 * 60 * 1000,
   });
 
   const getRole = () => {
     if (!user) return 'guest';
 
-    // 1. Super Admin Override (from env var) - highest priority
-    const superAdminEmail = import.meta.env.VITE_SUPER_ADMIN_EMAIL;
-    if (superAdminEmail && user.email?.toLowerCase() === superAdminEmail.toLowerCase()) {
+    if (isSuperAdminOverride) {
       if (import.meta.env.DEV) {
         console.log('[useRoleAccess] Using VITE_SUPER_ADMIN_EMAIL override');
       }
       return 'super_admin';
     }
 
-    // 2. Database Role (from user_roles table)
     if (dbRoleData?.role) {
       if (import.meta.env.DEV) {
         console.log('[useRoleAccess] Using DB role:', dbRoleData.role);
@@ -97,15 +118,13 @@ export default function useRoleAccess() {
       return dbRoleData.role;
     }
 
-    // 3. User Metadata Fallback (from auth user metadata)
-    if (user.user_metadata?.role) {
+    if (fallbackRole !== 'user') {
       if (import.meta.env.DEV) {
-        console.log('[useRoleAccess] Using user metadata role:', user.user_metadata.role);
+        console.log('[useRoleAccess] Using fallback role:', fallbackRole);
       }
-      return user.user_metadata.role;
+      return fallbackRole;
     }
 
-    // 4. Default to 'user' (staff role)
     if (import.meta.env.DEV) {
       console.log('[useRoleAccess] Using default role: user');
     }
@@ -119,10 +138,12 @@ export default function useRoleAccess() {
     user,
     role,
     permissions,
-    isLoading: loadingRole,
-    isAdmin: ['admin', 'super_admin'].includes(role), // Boolean, not function
-    isSuperAdmin: role === 'super_admin', // Boolean, not function
-    hasPermission: (perm) => !!permissions[perm], // Function for custom permissions
+    isLoading: false,
+    isRoleLoading,
+    roleError,
+    isAdmin: ['admin', 'super_admin'].includes(role),
+    isSuperAdmin: role === 'super_admin',
+    hasPermission: (perm) => !!permissions[perm],
     canManageRoles: !!permissions.canManageRoles,
     canEditSettings: !!permissions.canEditSettings
   };

@@ -108,6 +108,9 @@ export default function Sidebar({ collapsed, setCollapsed, className }) {
       return profiles[0] || null;
     },
     enabled: !!user?.email,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 
   const getInitials = (name, email) => {

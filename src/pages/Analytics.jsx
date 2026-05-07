@@ -7,24 +7,30 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Users, ClipboardList, AlertTriangle, TrendingUp } from 'lucide-react';
 import StatCard from '@/components/ui/StatCard';
 import { PageLoader } from '@/components/ui/LoadingSpinner';
+import DataState from '@/components/ui/DataState';
+import useTimedLoading from '@/hooks/useTimedLoading';
 
 const COLORS = ['hsl(174, 72%, 46%)', 'hsl(199, 89%, 48%)', 'hsl(38, 92%, 50%)', 'hsl(0, 84%, 60%)', 'hsl(142, 71%, 45%)', 'hsl(280, 65%, 60%)'];
 
 export default function Analytics() {
-  const { data: staffList = [], isLoading: ls } = useQuery({
+  const { data: staffList = [], isLoading: ls, isError: staffError, error: staffErrorData, refetch: refetchStaff } = useQuery({
     queryKey: ['staff-profiles'],
     queryFn: () => entities.StaffProfile.list('-created_at', 200),
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 
-  const { data: reports = [], isLoading: lr } = useQuery({
+  const { data: reports = [], isLoading: lr, isError: reportsError, error: reportsErrorData, refetch: refetchReports } = useQuery({
     queryKey: ['all-workflow-reports'],
     queryFn: () => entities.DailyWorkflowReport.list('-report_date', 500),
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 
   const loading = ls || lr;
+  const { showLoader, timedOut } = useTimedLoading(loading);
 
   const analytics = useMemo(() => {
-    if (loading) return null;
     const active = staffList.filter(s => s.employment_status === 'Active');
     const last7Days = subDays(new Date(), 7);
     const recentReports = reports.filter(r => r.report_date && isAfter(parseISO(r.report_date), last7Days));
@@ -88,10 +94,17 @@ export default function Analytics() {
     };
   }, [staffList, reports, loading]);
 
-  if (loading) return <PageLoader />;
+  if (showLoader) return <PageLoader />;
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {(staffError || reportsError || timedOut) && (
+        <DataState
+          title={timedOut ? 'Still loading analytics' : 'Analytics data unavailable'}
+          description={staffErrorData?.message || reportsErrorData?.message || 'Showing zeroed analytics for now.'}
+          onRetry={() => { refetchStaff(); refetchReports(); }}
+        />
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard title="Active Staff" value={analytics.active} icon={Users} />
         <StatCard title="Reports (7 days)" value={analytics.totalReports} icon={ClipboardList} />

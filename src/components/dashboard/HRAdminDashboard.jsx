@@ -1,12 +1,13 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { entities } from '@/lib/supabaseEntities';
-import { Users, FileText, Clock, AlertTriangle, CheckCircle2, Briefcase } from 'lucide-react';
+import { Users, FileText, Clock, AlertTriangle, CheckCircle2, Briefcase, Cake, CalendarDays } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import StatCard from '@/components/ui/StatCard';
 import { DashCard, DashListRow } from './DashboardShared';
-import { format } from 'date-fns';
+import { format, parseISO, isAfter, isBefore, addDays } from 'date-fns';
+import useTimedLoading from '@/hooks/useTimedLoading';
 
 export default function HRAdminDashboard() {
   const { data: staffList = [], isLoading: staffLoading } = useQuery({
@@ -31,12 +32,27 @@ export default function HRAdminDashboard() {
     }),
     staleTime: 2 * 60 * 1000,
   });
+  const staffTimed = useTimedLoading(staffLoading);
+  const reportsTimed = useTimedLoading(reportsLoading);
 
   const totalStaff = staffList.length;
   const incompleteProfiles = staffList.filter(s => (s.profile_completion_percentage || 0) < 80);
   const dueProbation = staffList.filter(s => s.confirmation_status === 'Pending' || s.employment_type === 'Probation');
   const pendingCVs = staffList.length - userDocuments.filter(d => d.document_type === 'CV').length;
   const pendingReview = todayReports.filter(r => r.review_status === 'Pending Review');
+  const now = new Date();
+  const birthdays = staffList.filter(s => {
+    if (!s.date_of_birth) return false;
+    const bday = parseISO(s.date_of_birth);
+    const thisYear = new Date(now.getFullYear(), bday.getMonth(), bday.getDate());
+    return isAfter(thisYear, addDays(now, -1)) && isBefore(thisYear, addDays(now, 30));
+  });
+  const anniversaries = staffList.filter(s => {
+    if (!s.date_joined) return false;
+    const joined = parseISO(s.date_joined);
+    const thisYear = new Date(now.getFullYear(), joined.getMonth(), joined.getDate());
+    return isAfter(thisYear, addDays(now, -1)) && isBefore(thisYear, addDays(now, 30));
+  });
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -52,19 +68,19 @@ export default function HRAdminDashboard() {
           title="Total Staff" 
           value={totalStaff} 
           icon={Users}
-          loading={staffLoading}
+          loading={staffTimed.showLoader}
         />
         <StatCard 
           title="Reports Today" 
           value={todayReports.length} 
           icon={CheckCircle2}
-          loading={reportsLoading}
+          loading={reportsTimed.showLoader}
         />
         <StatCard 
           title="Pending Reviews" 
           value={pendingReview.length} 
           icon={Clock}
-          loading={reportsLoading}
+          loading={reportsTimed.showLoader}
         />
         <StatCard 
           title="Pending CVs" 
@@ -78,13 +94,25 @@ export default function HRAdminDashboard() {
           title="Due for Confirmation" 
           value={dueProbation.length} 
           icon={Clock}
-          loading={staffLoading}
+          loading={staffTimed.showLoader}
         />
         <StatCard 
           title="Incomplete Profiles" 
           value={incompleteProfiles.length} 
           icon={AlertTriangle}
-          loading={staffLoading}
+          loading={staffTimed.showLoader}
+        />
+        <StatCard 
+          title="Work Anniversaries" 
+          value={anniversaries.length} 
+          icon={CalendarDays}
+          loading={staffTimed.showLoader}
+        />
+        <StatCard 
+          title="Birthdays" 
+          value={birthdays.length} 
+          icon={Cake}
+          loading={staffTimed.showLoader}
         />
       </div>
 

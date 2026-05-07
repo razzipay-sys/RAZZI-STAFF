@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import StatCard from '@/components/ui/StatCard';
 import { DashCard, DashListRow } from './DashboardShared';
 import { format } from 'date-fns';
+import useTimedLoading from '@/hooks/useTimedLoading';
 
 export default function ManagerDashboard() {
   const { data: todayReports = [], isLoading: reportsLoading } = useQuery({
@@ -26,6 +27,10 @@ export default function ManagerDashboard() {
   const completedToday = todayReports.filter(r => r.status === 'Completed');
   const blockedTasks = todayReports.filter(r => r.status === 'Blocked');
   const pendingReview = todayReports.filter(r => r.review_status === 'Pending Review');
+  const staffTimed = useTimedLoading(staffLoading);
+  const reportsTimed = useTimedLoading(reportsLoading);
+  const reportingStaff = new Set(todayReports.map(r => r.staff_id).filter(Boolean));
+  const lateReports = staffList.filter(s => s.staff_id && !reportingStaff.has(s.staff_id));
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -41,25 +46,25 @@ export default function ManagerDashboard() {
           title="Total Staff" 
           value={staffList.length} 
           icon={Users}
-          loading={staffLoading}
+          loading={staffTimed.showLoader}
         />
         <StatCard 
           title="Reports Today" 
           value={todayReports.length} 
           icon={ClipboardList}
-          loading={reportsLoading}
+          loading={reportsTimed.showLoader}
         />
         <StatCard 
           title="Completed Today" 
           value={completedToday.length} 
           icon={CheckCircle2}
-          loading={reportsLoading}
+          loading={reportsTimed.showLoader}
         />
         <StatCard 
           title="Blocked Tasks" 
           value={blockedTasks.length} 
           icon={AlertTriangle}
-          loading={reportsLoading}
+          loading={reportsTimed.showLoader}
         />
       </div>
 
@@ -68,7 +73,19 @@ export default function ManagerDashboard() {
           title="Pending Reviews" 
           value={pendingReview.length} 
           icon={AlertCircle}
-          loading={reportsLoading}
+          loading={reportsTimed.showLoader}
+        />
+        <StatCard 
+          title="Late Reports" 
+          value={lateReports.length} 
+          icon={AlertTriangle}
+          loading={staffTimed.showLoader || reportsTimed.showLoader}
+        />
+        <StatCard 
+          title="Team Members" 
+          value={staffList.length} 
+          icon={Users}
+          loading={staffTimed.showLoader}
         />
       </div>
 

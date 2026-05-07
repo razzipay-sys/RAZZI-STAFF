@@ -18,6 +18,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
 import { PageLoader } from '@/components/ui/LoadingSpinner';
+import DataState from '@/components/ui/DataState';
+import useTimedLoading from '@/hooks/useTimedLoading';
 import { toast } from 'sonner';
 import useRoleAccess from '@/lib/useRoleAccess';
 import useAuditLog from '@/lib/useAuditLog';
@@ -33,13 +35,16 @@ export default function StaffProfile() {
   const [docDialogOpen, setDocDialogOpen] = useState(false);
   const [newDoc, setNewDoc] = useState({ document_type: 'CV', document_name: '', status: 'Pending' });
 
-  const { data: staff, isLoading } = useQuery({
+  const { data: staff, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['staff-profile', id],
     queryFn: async () => {
       const s = await entities.StaffProfile.filter({ id });
       return s[0] || null;
     },
+    retry: false,
+    refetchOnWindowFocus: false,
   });
+  const { showLoader, timedOut } = useTimedLoading(isLoading);
 
   const { data: documents = [] } = useQuery({
     queryKey: ['staff-documents', staff?.staff_id],
@@ -141,7 +146,16 @@ export default function StaffProfile() {
     toast.success(`Exported as ${format.toUpperCase()}`);
   };
 
-  if (isLoading) return <PageLoader />;
+  if (showLoader) return <PageLoader />;
+  if (isError || timedOut) {
+    return (
+      <DataState
+        title={timedOut ? 'Still loading profile' : 'Staff profile unavailable'}
+        description={error?.message || 'The profile did not load in time.'}
+        onRetry={refetch}
+      />
+    );
+  }
   if (!staff) return <EmptyState title="Staff not found" description="This profile does not exist." action={() => navigate('/staff')} actionLabel="Back to Directory" />;
 
   const getInitials = (name) => name ? name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '??';

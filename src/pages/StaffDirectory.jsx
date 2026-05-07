@@ -18,6 +18,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
 import { PageLoader } from '@/components/ui/LoadingSpinner';
+import DataState from '@/components/ui/DataState';
+import useTimedLoading from '@/hooks/useTimedLoading';
 import useRoleAccess from '@/lib/useRoleAccess';
 import useAuditLog from '@/lib/useAuditLog';
 import { exportToCSV, exportToPDF } from '@/lib/exportUtils';
@@ -39,10 +41,13 @@ export default function StaffDirectory() {
   const [workMode, setWorkMode] = useState('All');
   const [empType, setEmpType] = useState('All');
 
-  const { data: staffList = [], isLoading } = useQuery({
+  const { data: staffList = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['staff-profiles'],
     queryFn: () => entities.StaffProfile.list('-created_at', 200),
+    retry: false,
+    refetchOnWindowFocus: false,
   });
+  const { showLoader, timedOut } = useTimedLoading(isLoading);
 
   const filtered = useMemo(() => {
     return staffList.filter(s => {
@@ -60,7 +65,7 @@ export default function StaffDirectory() {
     });
   }, [staffList, search, department, status, workMode, empType]);
 
-  if (isLoading) return <PageLoader />;
+  if (showLoader) return <PageLoader />;
 
   const getInitials = (name) => {
     if (!name) return '??';
@@ -100,6 +105,13 @@ export default function StaffDirectory() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {(isError || timedOut) && (
+        <DataState
+          title={timedOut ? 'Still loading staff' : 'Staff data unavailable'}
+          description={error?.message || 'Showing an empty staff directory for now.'}
+          onRetry={refetch}
+        />
+      )}
       {/* Actions Bar */}
       <div className="flex flex-col sm:flex-row gap-4 justify-between">
         <div className="relative flex-1 max-w-md">
