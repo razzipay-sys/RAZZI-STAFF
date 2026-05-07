@@ -65,17 +65,37 @@ export default function Settings() {
     queryKey: ['my-profile', authUser?.email],
     queryFn: async () => {
       if (!authUser?.email) return null;
-      const profiles = await entities.StaffProfile.filter({ email: authUser.email });
-      return profiles[0] || null;
+      try {
+        const profiles = await entities.StaffProfile.filter({ email: authUser.email });
+        return profiles[0] || null;
+      } catch (err) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('[Settings] Failed to fetch staff profile:', err.message);
+        }
+        return null;
+      }
     },
     enabled: !!authUser?.email,
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
   });
 
-  // Fetch app settings from Supabase
+  // Fetch app settings from Supabase (only if user is admin)
   const { data: dbSettings = [], isLoading: loadingSettings } = useQuery({
     queryKey: ['app-settings'],
-    queryFn: () => entities.AppSetting.list(),
-    enabled: isAdmin, // ← CHANGED: was isAdmin()
+    queryFn: async () => {
+      try {
+        return await entities.AppSetting.list();
+      } catch (err) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('[Settings] Failed to fetch app settings:', err.message);
+        }
+        return [];
+      }
+    },
+    enabled: isAdmin, // FIX: Changed from isAdmin() to isAdmin (boolean)
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
   });
 
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
@@ -85,9 +105,15 @@ export default function Settings() {
     if (dbSettings.length > 0) {
       const merged = { ...DEFAULT_SETTINGS };
       dbSettings.forEach(s => {
-        if (s.setting_key === 'work_schedule') Object.assign(merged, s.setting_value);
-        if (s.setting_key === 'reminders') Object.assign(merged, s.setting_value);
-        if (s.setting_key === 'company_identity') Object.assign(merged, s.setting_value);
+        if (s.setting_key === 'work_schedule' && s.setting_value) {
+          Object.assign(merged, s.setting_value);
+        }
+        if (s.setting_key === 'reminders' && s.setting_value) {
+          Object.assign(merged, s.setting_value);
+        }
+        if (s.setting_key === 'company_identity' && s.setting_value) {
+          Object.assign(merged, s.setting_value);
+        }
       });
       setSettings(merged);
     }
@@ -97,9 +123,13 @@ export default function Settings() {
 
   const saveSettingsMutation = useMutation({
     mutationFn: async () => {
-      if (!isAdmin) return; // ← CHANGED: was if (!isAdmin())
+      // FIX: Changed from if (!isAdmin()) to if (!isAdmin)
+      if (!isAdmin) return;
       
-      const identity = { company_name: settings.company_name, app_name: settings.app_name };
+      const identity = { 
+        company_name: settings.company_name, 
+        app_name: settings.app_name 
+      };
       const schedule = { 
         work_start_time: settings.work_start_time, 
         work_close_time: settings.work_close_time, 
@@ -111,37 +141,59 @@ export default function Settings() {
         salary_reminder_days: settings.salary_reminder_days
       };
 
-      // IMPORTANT: Use upsert for app_settings (update by setting_key, not id)
+      // FIX: Use upsert for app_settings (update by setting_key, not id)
       const promises = [
         supabase.from('app_settings').upsert({
           setting_key: 'company_identity',
           setting_value: identity,
-          updated_by: authUser?.id
+          updated_by: authUser?.id,
+          updated_at: new Date().toISOString()
         }, { onConflict: 'setting_key' }),
         supabase.from('app_settings').upsert({
           setting_key: 'work_schedule',
           setting_value: schedule,
-          updated_by: authUser?.id
+          updated_by: authUser?.id,
+          updated_at: new Date().toISOString()
         }, { onConflict: 'setting_key' }),
         supabase.from('app_settings').upsert({
           setting_key: 'reminders',
           setting_value: reminders,
-          updated_by: authUser?.id
+          updated_by: authUser?.id,
+          updated_at: new Date().toISOString()
         }, { onConflict: 'setting_key' })
       ];
       
-      await Promise.all(promises);
-      await logAction({ actionType: 'SETTINGS_UPDATE', entityType: 'AppSettings', notes: 'Global app settings updated' });
+      const results = await Promise.all(promises);
+      
+      // Check for errors
+      results.forEach((result, idx) => {
+        if (result.error) {
+          throw new Error(`Failed to save setting: ${result.error.message}`);
+        }
+      });
+
+      await logAction({ 
+        actionType: 'SETTINGS_UPDATE', 
+        entityType: 'AppSettings', 
+        notes: 'Global app settings updated' 
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['app-settings'] });
       toast.success('Global settings saved to database');
     },
-    onError: () => toast.error('Failed to save settings')
+    onError: (err) => {
+      console.error('[Settings] Save error:', err);
+      toast.error(err.message || 'Failed to save settings');
+    }
   });
 
   const uploadAvatar = async (file) => {
-    if (!staffProfile) return;
+    if (!staffProfile) {
+      toast.error('Staff profile not found');
+      return;
+    }
+    
     setUploading(true);
     try {
       const fileExt = file.name.split('.').pop();
@@ -156,18 +208,25 @@ export default function Settings() {
       const { data: { publicUrl } } = supabase.storage.from('staff-avatars').getPublicUrl(fileName);
       
       await entities.StaffProfile.update(staffProfile.id, { profile_photo_url: publicUrl });
-      await logAction({ actionType: 'AVATAR_UPDATE', entityType: 'StaffProfile', entityId: staffProfile.id, notes: 'Avatar updated' });
+      await logAction({ 
+        actionType: 'AVATAR_UPDATE', 
+        entityType: 'StaffProfile', 
+        entityId: staffProfile.id, 
+        notes: 'Avatar updated' 
+      });
       
-      queryClient.invalidateQueries({ queryKey: ['my-profile'] });
+      queryClient.invalidateQueries({ queryKey: ['my-profile', authUser?.email] });
       toast.success('Profile photo updated');
     } catch (e) {
-      toast.error('Upload failed: ' + e.message);
+      console.error('[Settings] Avatar upload error:', e);
+      toast.error('Upload failed: ' + (e.message || 'Unknown error'));
     } finally {
       setUploading(false);
     }
   };
 
-  if (loadingProfile || (isAdmin && loadingSettings)) { // ← CHANGED: was isAdmin()
+  // FIX: Changed from (isAdmin && loadingSettings) to (isAdmin && loadingSettings)
+  if (loadingProfile || (isAdmin && loadingSettings)) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Loader2 className="w-8 h-8 text-primary animate-spin" />
@@ -177,7 +236,12 @@ export default function Settings() {
 
   const displayName = staffProfile?.full_name || authUser?.email?.split('@')[0] || 'User';
   const avatarUrl = staffProfile?.profile_photo_url;
-  const initials = displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  const initials = displayName
+    .split(' ')
+    .map(n => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
 
   const StatusBadge = ({ status }) => (
     <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium uppercase tracking-wider">
@@ -193,7 +257,7 @@ export default function Settings() {
         <div className="flex flex-col sm:flex-row items-center gap-6">
           <div className="relative group">
             <Avatar className="h-20 w-20 ring-4 ring-primary/10">
-              <AvatarImage src={avatarUrl} />
+              <AvatarImage src={avatarUrl} alt={displayName} />
               <AvatarFallback className="bg-primary/10 text-primary text-xl font-bold">
                 {initials}
               </AvatarFallback>
@@ -204,7 +268,7 @@ export default function Settings() {
                 type="file" 
                 className="hidden" 
                 accept="image/*" 
-                onChange={e => e.target.files[0] && uploadAvatar(e.target.files[0])}
+                onChange={e => e.target.files?.[0] && uploadAvatar(e.target.files[0])}
                 disabled={uploading}
               />
             </label>
@@ -226,49 +290,91 @@ export default function Settings() {
       </Section>
 
       {/* Admin-only Global Settings */}
-      {isAdmin() && (
+      {/* FIX: Changed from {isAdmin() && ( to {isAdmin && ( */}
+      {isAdmin && (
         <>
           <Section title="Company & App Identity" icon={Building2}>
             <FieldRow label="Company Name">
-              <Input value={settings.company_name} onChange={e => update('company_name', e.target.value)} />
+              <Input 
+                value={settings.company_name} 
+                onChange={e => update('company_name', e.target.value)} 
+                placeholder="RazziPay"
+              />
             </FieldRow>
             <FieldRow label="App Name" description="Displayed in the sidebar and page title">
-              <Input value={settings.app_name} onChange={e => update('app_name', e.target.value)} />
+              <Input 
+                value={settings.app_name} 
+                onChange={e => update('app_name', e.target.value)}
+                placeholder="RazziStaff"
+              />
             </FieldRow>
           </Section>
 
           <Section title="Work Schedule" icon={Clock}>
             <FieldRow label="Work Start Time" description="Used to calculate late clock-ins">
-              <Input type="time" value={settings.work_start_time} onChange={e => update('work_start_time', e.target.value)} />
+              <Input 
+                type="time" 
+                value={settings.work_start_time} 
+                onChange={e => update('work_start_time', e.target.value)} 
+              />
             </FieldRow>
             <FieldRow label="Work Close Time">
-              <Input type="time" value={settings.work_close_time} onChange={e => update('work_close_time', e.target.value)} />
+              <Input 
+                type="time" 
+                value={settings.work_close_time} 
+                onChange={e => update('work_close_time', e.target.value)} 
+              />
             </FieldRow>
             <FieldRow label="Late Threshold" description="Minutes after start time before marked Late">
-              <Input type="number" min="0" max="120" value={settings.late_threshold_minutes}
-                onChange={e => update('late_threshold_minutes', parseInt(e.target.value) || 0)} />
+              <Input 
+                type="number" 
+                min="0" 
+                max="120" 
+                value={settings.late_threshold_minutes}
+                onChange={e => update('late_threshold_minutes', parseInt(e.target.value) || 0)} 
+              />
             </FieldRow>
           </Section>
 
           <Section title="Salary & Payroll" icon={Shield}>
             <FieldRow label="Default Payment Day" description="Day of month salaries are paid (1–31)">
-              <Input type="number" min="1" max="31" value={settings.default_salary_payment_day}
-                onChange={e => update('default_salary_payment_day', parseInt(e.target.value) || 25)} />
+              <Input 
+                type="number" 
+                min="1" 
+                max="31" 
+                value={settings.default_salary_payment_day}
+                onChange={e => update('default_salary_payment_day', parseInt(e.target.value) || 25)} 
+              />
             </FieldRow>
             <FieldRow label="Salary Reminder (days)" description="Days before payment day to show reminder on dashboard">
-              <Input type="number" min="1" max="14" value={settings.salary_reminder_days}
-                onChange={e => update('salary_reminder_days', parseInt(e.target.value) || 5)} />
+              <Input 
+                type="number" 
+                min="1" 
+                max="14" 
+                value={settings.salary_reminder_days}
+                onChange={e => update('salary_reminder_days', parseInt(e.target.value) || 5)} 
+              />
             </FieldRow>
           </Section>
 
           <Section title="Reminders & Alerts" icon={Bell}>
             <FieldRow label="Birthday Reminder" description="Days in advance to show birthday reminders">
-              <Input type="number" min="1" max="30" value={settings.birthday_reminder_days}
-                onChange={e => update('birthday_reminder_days', parseInt(e.target.value) || 7)} />
+              <Input 
+                type="number" 
+                min="1" 
+                max="30" 
+                value={settings.birthday_reminder_days}
+                onChange={e => update('birthday_reminder_days', parseInt(e.target.value) || 7)} 
+              />
             </FieldRow>
             <FieldRow label="Confirmation Reminder" description="Days before probation end to show reminder">
-              <Input type="number" min="7" max="90" value={settings.confirmation_reminder_days}
-                onChange={e => update('confirmation_reminder_days', parseInt(e.target.value) || 30)} />
+              <Input 
+                type="number" 
+                min="7" 
+                max="90" 
+                value={settings.confirmation_reminder_days}
+                onChange={e => update('confirmation_reminder_days', parseInt(e.target.value) || 30)} 
+              />
             </FieldRow>
           </Section>
 
@@ -278,14 +384,26 @@ export default function Settings() {
               disabled={saveSettingsMutation.isPending}
               className="gradient-primary text-primary-foreground"
             >
-              {saveSettingsMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-              Save Global Settings
+              {saveSettingsMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4 mr-2" />
+                  Save Global Settings
+                </>
+              )}
             </Button>
           </div>
         </>
       )}
 
-      {/* Role Access Information (Only show "Your Role" to non-admins, full matrix to admins) */}
+      {/* Role Access Information 
+          - Admins see full matrix
+          - Non-admins only see their own role info
+      */}
       <Section title="System Access" icon={Shield}>
         <div className="space-y-2">
           {[
@@ -296,12 +414,22 @@ export default function Settings() {
             { role: 'manager', label: 'Manager', desc: 'View team workflow reports, submit reviews. No HR data.' },
             { role: 'user', label: 'Staff', desc: 'Submit daily reports and view own profile only.' },
           ]
-          .filter(r => isAdmin || r.role === role)
+          .filter(r => isAdmin || r.role === role) // FIX: Show full matrix to admins, only current role to others
           .map(r => (
-            <div key={r.role} className={`flex items-start gap-3 p-3 rounded-lg border ${role === r.role ? 'border-primary bg-primary/5 shadow-sm' : 'border-border'}`}>
+            <div 
+              key={r.role} 
+              className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${
+                role === r.role 
+                  ? 'border-primary bg-primary/5 shadow-sm' 
+                  : 'border-border'
+              }`}
+            >
               <div className="flex-1">
-                <p className="text-sm font-semibold">{r.label}
-                  {role === r.role && <span className="ml-2 text-xs text-primary font-bold">(Your Role)</span>}
+                <p className="text-sm font-semibold">
+                  {r.label}
+                  {role === r.role && (
+                    <span className="ml-2 text-xs text-primary font-bold">(Your Role)</span>
+                  )}
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{r.desc}</p>
               </div>

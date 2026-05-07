@@ -43,7 +43,7 @@ function ErrorFallback({ error }) {
           <p className="text-muted-foreground">
             The page failed to load due to a runtime error. This might be a temporary connection issue.
           </p>
-          {process.env.NODE_ENV === 'development' && (
+          {import.meta.env.DEV && (
             <div className="mt-4 p-4 bg-muted rounded-lg text-left overflow-auto max-h-40">
               <code className="text-xs text-red-400">{error?.toString()}</code>
             </div>
