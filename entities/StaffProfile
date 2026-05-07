@@ -1,0 +1,158 @@
+{
+  "name": "StaffProfile",
+  "type": "object",
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "description": "Linked app user ID if applicable"
+    },
+    "staff_id": {
+      "type": "string",
+      "description": "Unique staff identifier"
+    },
+    "full_name": {
+      "type": "string",
+      "description": "Full name of staff"
+    },
+    "email": {
+      "type": "string",
+      "format": "email"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "department": {
+      "type": "string",
+      "enum": [
+        "Engineering",
+        "Finance",
+        "Operations",
+        "HR",
+        "Marketing",
+        "Sales",
+        "Customer Support",
+        "Legal",
+        "Product",
+        "Executive"
+      ]
+    },
+    "role": {
+      "type": "string",
+      "description": "Job title/position"
+    },
+    "employment_type": {
+      "type": "string",
+      "enum": [
+        "Full-time",
+        "Part-time",
+        "Contract",
+        "Intern",
+        "Probation"
+      ]
+    },
+    "work_mode": {
+      "type": "string",
+      "enum": [
+        "On-site",
+        "Remote",
+        "Hybrid"
+      ]
+    },
+    "address": {
+      "type": "string"
+    },
+    "emergency_contact_name": {
+      "type": "string"
+    },
+    "emergency_contact_phone": {
+      "type": "string"
+    },
+    "next_of_kin_name": {
+      "type": "string"
+    },
+    "next_of_kin_phone": {
+      "type": "string"
+    },
+    "next_of_kin_relationship": {
+      "type": "string"
+    },
+    "profile_photo_url": {
+      "type": "string"
+    },
+    "date_of_birth": {
+      "type": "string",
+      "format": "date"
+    },
+    "date_joined": {
+      "type": "string",
+      "format": "date"
+    },
+    "first_employment_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "confirmation_status": {
+      "type": "string",
+      "enum": [
+        "Pending",
+        "Confirmed",
+        "Extended",
+        "Not Applicable"
+      ]
+    },
+    "confirmation_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "probation_start_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "probation_end_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "employment_status": {
+      "type": "string",
+      "enum": [
+        "Active",
+        "Suspended",
+        "Resigned",
+        "Terminated",
+        "On Leave"
+      ]
+    },
+    "manager_id": {
+      "type": "string",
+      "description": "Staff ID of reporting manager"
+    },
+    "manager_name": {
+      "type": "string"
+    },
+    "staff_bio": {
+      "type": "string"
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "responsibilities": {
+      "type": "string"
+    },
+    "hr_notes": {
+      "type": "string"
+    },
+    "profile_completion_percentage": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "full_name",
+    "email",
+    "department",
+    "role",
+    "employment_status"
+  ]
+}

@@ -1,0 +1,114 @@
+{
+  "name": "DailyWorkflowReport",
+  "type": "object",
+  "properties": {
+    "staff_id": {
+      "type": "string"
+    },
+    "staff_name": {
+      "type": "string"
+    },
+    "department": {
+      "type": "string"
+    },
+    "report_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "assigned_task": {
+      "type": "string"
+    },
+    "task_description": {
+      "type": "string"
+    },
+    "priority": {
+      "type": "string",
+      "enum": [
+        "Low",
+        "Medium",
+        "High",
+        "Urgent"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Not Started",
+        "In Progress",
+        "Completed",
+        "Pending Review",
+        "Blocked",
+        "Carried Forward"
+      ]
+    },
+    "work_done": {
+      "type": "string"
+    },
+    "proof_link": {
+      "type": "string"
+    },
+    "blockers": {
+      "type": "string"
+    },
+    "start_time": {
+      "type": "string"
+    },
+    "close_time": {
+      "type": "string"
+    },
+    "hours_worked": {
+      "type": "number"
+    },
+    "work_mode_for_day": {
+      "type": "string",
+      "enum": [
+        "Remote",
+        "On-site",
+        "Hybrid"
+      ]
+    },
+    "clock_in_time": {
+      "type": "string"
+    },
+    "clock_out_time": {
+      "type": "string"
+    },
+    "compliance_status": {
+      "type": "string",
+      "enum": [
+        "Compliant",
+        "Late",
+        "Absent",
+        "Incomplete Report",
+        "Pending Review"
+      ]
+    },
+    "supervisor_id": {
+      "type": "string"
+    },
+    "supervisor_name": {
+      "type": "string"
+    },
+    "supervisor_comment": {
+      "type": "string"
+    },
+    "review_status": {
+      "type": "string",
+      "enum": [
+        "Pending Review",
+        "Approved",
+        "Needs Correction",
+        "Rejected"
+      ]
+    },
+    "next_action": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "staff_id",
+    "staff_name",
+    "report_date",
+    "work_done"
+  ]
+}

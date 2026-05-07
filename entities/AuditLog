@@ -1,0 +1,52 @@
+{
+  "name": "AuditLog",
+  "type": "object",
+  "properties": {
+    "action_type": {
+      "type": "string",
+      "enum": [
+        "CREATE",
+        "UPDATE",
+        "DELETE",
+        "VIEW",
+        "EXPORT",
+        "LOGIN",
+        "LOGOUT"
+      ]
+    },
+    "entity_type": {
+      "type": "string",
+      "description": "Type of record affected"
+    },
+    "entity_id": {
+      "type": "string"
+    },
+    "entity_name": {
+      "type": "string"
+    },
+    "performed_by": {
+      "type": "string"
+    },
+    "performed_by_role": {
+      "type": "string"
+    },
+    "changes": {
+      "type": "string",
+      "description": "JSON string of field changes"
+    },
+    "ip_address": {
+      "type": "string"
+    },
+    "user_agent": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "action_type",
+    "entity_type",
+    "performed_by"
+  ]
+}

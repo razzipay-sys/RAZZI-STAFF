@@ -1,0 +1,60 @@
+{
+  "name": "StaffBankDetails",
+  "type": "object",
+  "properties": {
+    "staff_id": {
+      "type": "string",
+      "description": "Reference to StaffProfile"
+    },
+    "staff_name": {
+      "type": "string"
+    },
+    "bank_name": {
+      "type": "string"
+    },
+    "account_number": {
+      "type": "string"
+    },
+    "account_name": {
+      "type": "string"
+    },
+    "salary_amount": {
+      "type": "number"
+    },
+    "salary_currency": {
+      "type": "string",
+      "default": "NGN"
+    },
+    "salary_payment_date": {
+      "type": "number",
+      "description": "Day of month for payment"
+    },
+    "payment_frequency": {
+      "type": "string",
+      "enum": [
+        "Monthly",
+        "Weekly",
+        "Bi-weekly",
+        "Contract-based"
+      ]
+    },
+    "tax_deduction": {
+      "type": "number"
+    },
+    "pension_deduction": {
+      "type": "number"
+    },
+    "other_deductions": {
+      "type": "number"
+    },
+    "finance_notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "staff_id",
+    "bank_name",
+    "account_number",
+    "account_name"
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "name": "StaffDocument",
+  "type": "object",
+  "properties": {
+    "staff_id": {
+      "type": "string",
+      "description": "Reference to StaffProfile"
+    },
+    "staff_name": {
+      "type": "string"
+    },
+    "document_type": {
+      "type": "string",
+      "enum": [
+        "CV",
+        "ID Card",
+        "Offer Letter",
+        "Appointment Letter",
+        "Confirmation Letter",
+        "NDA",
+        "Contract",
+        "Certificate",
+        "Other"
+      ]
+    },
+    "document_name": {
+      "type": "string"
+    },
+    "document_url": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Pending",
+        "Submitted",
+        "Reviewed",
+        "Requires Update",
+        "Approved",
+        "Rejected"
+      ]
+    },
+    "reviewed_by": {
+      "type": "string"
+    },
+    "reviewed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "staff_id",
+    "document_type",
+    "status"
+  ]
+}
