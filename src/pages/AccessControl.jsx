@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
-import { entities } from '@/lib/supabaseEntities';
-import { useAuth } from '@/lib/AuthContext';
+import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Search, Shield, UserPlus, UserCog, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,10 +11,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Label } from '@/components/ui/label';
 import EmptyState from '@/components/ui/EmptyState';
 import { PageLoader } from '@/components/ui/LoadingSpinner';
-import { toast } from 'sonner';
+import StatusBadge from '@/components/ui/StatusBadge';
 import useRoleAccess from '@/lib/useRoleAccess';
 import useAuditLog from '@/lib/useAuditLog';
-import StatusBadge from '@/components/ui/StatusBadge';
+import { entities } from '@/lib/supabaseEntities';
+import supabase from '@/lib/supabase';
 
 const ROLES = [
   { value: 'user', label: 'Staff' },
@@ -28,79 +28,93 @@ const ROLES = [
 
 export default function AccessControl() {
   const queryClient = useQueryClient();
-  const { user: authUser } = useAuth();
-  const { role: currentUserRole, isSuperAdmin, hasPermission } = useRoleAccess(); // ← REMOVED () from isSuperAdmin
+  const { role: currentUserRole, isSuperAdmin, hasPermission } = useRoleAccess();
   const { logAction } = useAuditLog();
-  const [searchTab, setSearchTab] = useState('staff');
   const [search, setSearch] = useState('');
-  const [manualEmail, setManualEmail] = useState('');
   const [selectedUser, setSelectedUser] = useState(null);
 
-  // Fetch all profiles to link roles to users
   const { data: staffList = [], isLoading: loadingStaff } = useQuery({
     queryKey: ['staff-profiles-access'],
     queryFn: () => entities.StaffProfile.list('-created_at', 500),
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 2 * 60 * 1000,
   });
 
-  // Fetch current roles from user_roles table
   const { data: userRoles = [], isLoading: loadingRoles } = useQuery({
     queryKey: ['user-roles-list'],
     queryFn: () => entities.UserRole.list(),
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 0,
   });
 
+  const roleByEmail = useMemo(() => (
+    new Map(userRoles.map(role => [role.email?.toLowerCase(), role]))
+  ), [userRoles]);
+
   const updateRoleMutation = useMutation({
-    mutationFn: async ({ email, newRole }) => {
-      // Safety checks
-      if (newRole === 'super_admin' && !isSuperAdmin) { // ← REMOVED () from isSuperAdmin
+    mutationFn: async ({ staff, newRole }) => {
+      const email = staff.email?.toLowerCase();
+      if (!email) throw new Error('Selected staff member does not have an email address');
+      if (newRole === 'super_admin' && !isSuperAdmin) {
         throw new Error('Only Super Admins can assign the Super Admin role');
       }
+      if (staff.currentRole === 'super_admin' && !isSuperAdmin) {
+        throw new Error('Only Super Admins can change a Super Admin role');
+      }
 
-      // Find if user already has a role
-      const existing = userRoles.find(r => r.email?.toLowerCase() === email.toLowerCase());
-      
+      const existing = roleByEmail.get(email);
       if (existing) {
-        await entities.UserRole.update(existing.id, { 
-          role: newRole,
-          updated_at: new Date().toISOString()
-        });
+        const { error } = await supabase
+          .from('user_roles')
+          .update({
+            user_id: staff.user_id || existing.user_id || null,
+            email,
+            role: newRole,
+            assigned_by: currentUserRole,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existing.id);
+
+        if (error) throw error;
       } else {
-        await entities.UserRole.create({
-          email: email,
-          role: newRole,
-          assigned_by: currentUserRole
-        });
+        const { error } = await supabase
+          .from('user_roles')
+          .insert({
+            user_id: staff.user_id || null,
+            email,
+            role: newRole,
+            assigned_by: currentUserRole,
+          });
+
+        if (error) throw error;
       }
 
       await logAction({
         actionType: 'ROLE_CHANGE',
         entityType: 'UserRole',
         entityName: email,
-        notes: `Role changed from ${existing?.role || 'user'} to ${newRole}`
+        notes: `Role changed from ${existing?.role || 'user'} to ${newRole}`,
       });
+
+      return { email };
     },
-    onSuccess: () => {
+    onSuccess: ({ email }) => {
       queryClient.invalidateQueries({ queryKey: ['user-roles-list'] });
-      queryClient.invalidateQueries({ queryKey: ['user-role'] });
+      queryClient.invalidateQueries({ queryKey: ['user-role', email] });
       toast.success('User role updated successfully');
       setSelectedUser(null);
-      setManualEmail('');
     },
     onError: (err) => {
       toast.error(err.message || 'Failed to update role');
-    }
+    },
   });
 
-  // Improved search: case-insensitive, staff_id support
-  const filteredStaff = staffList.filter(s => {
+  const filteredStaff = staffList.filter(staff => {
     if (!search) return true;
     const q = search.toLowerCase();
     return (
-      s.full_name?.toLowerCase().includes(q) || 
-      s.email?.toLowerCase().includes(q) ||
-      s.staff_id?.toLowerCase().includes(q) ||
-      s.department?.toLowerCase().includes(q)
+      staff.email?.toLowerCase().includes(q) ||
+      staff.staff_id?.toLowerCase().includes(q) ||
+      staff.full_name?.toLowerCase().includes(q) ||
+      staff.department?.toLowerCase().includes(q)
     );
   });
 
@@ -109,8 +123,6 @@ export default function AccessControl() {
   }
 
   if (loadingStaff || loadingRoles) return <PageLoader />;
-
-  const noResults = filteredStaff.length === 0;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -124,11 +136,11 @@ export default function AccessControl() {
       <div className="flex items-center gap-4">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input 
-            placeholder="Search by registered email, staff ID, name, or department..." 
-            value={search} 
-            onChange={e => setSearch(e.target.value)} 
-            className="pl-10" 
+          <Input
+            placeholder="Search by staff email, staff ID, full name, or department..."
+            value={search}
+            onChange={event => setSearch(event.target.value)}
+            className="pl-10"
           />
         </div>
       </div>
@@ -146,7 +158,7 @@ export default function AccessControl() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {noResults ? (
+              {filteredStaff.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center py-8">
                     <p className="text-muted-foreground">No matching registered staff/user found.</p>
@@ -154,9 +166,9 @@ export default function AccessControl() {
                 </TableRow>
               ) : (
                 filteredStaff.map(staff => {
-                  const roleData = userRoles.find(r => r.email?.toLowerCase() === staff.email?.toLowerCase());
+                  const roleData = roleByEmail.get(staff.email?.toLowerCase());
                   const currentRole = roleData?.role || 'user';
-                  
+
                   return (
                     <TableRow key={staff.id}>
                       <TableCell>
@@ -166,16 +178,16 @@ export default function AccessControl() {
                         </div>
                       </TableCell>
                       <TableCell className="text-sm">{staff.email}</TableCell>
-                      <TableCell className="text-sm font-mono text-xs">{staff.staff_id || 'N/A'}</TableCell>
+                      <TableCell className="text-sm font-mono">{staff.staff_id || 'N/A'}</TableCell>
                       <TableCell>
                         <StatusBadge status={currentRole.replace('_', ' ')} />
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => setSelectedUser({ ...staff, currentRole })}
-                          disabled={currentRole === 'super_admin' && !isSuperAdmin} // ← REMOVED () from isSuperAdmin
+                          disabled={currentRole === 'super_admin' && !isSuperAdmin}
                         >
                           <UserCog className="w-4 h-4 mr-2" /> Manage
                         </Button>
@@ -189,7 +201,6 @@ export default function AccessControl() {
         </div>
       </Card>
 
-      {/* Role Management Dialog */}
       <Dialog open={!!selectedUser} onOpenChange={() => setSelectedUser(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -209,41 +220,27 @@ export default function AccessControl() {
 
               <div className="space-y-3">
                 <Label>Select New Role</Label>
-                <Select 
-                  defaultValue={selectedUser.currentRole} 
-                  onValueChange={(val) => {
-                    // Safety checks
-                    if (val === 'super_admin' && !isSuperAdmin) { // ← REMOVED () from isSuperAdmin
-                      toast.error('Only Super Admins can assign the Super Admin role');
-                      return;
-                    }
-                    if (selectedUser.currentRole === 'super_admin' && !isSuperAdmin) { // ← REMOVED () from isSuperAdmin
-                      toast.error('Only Super Admins can change a Super Admin role');
-                      return;
-                    }
-                    updateRoleMutation.mutate({ 
-                      email: selectedUser.email, 
-                      newRole: val 
-                    });
-                  }}
+                <Select
+                  defaultValue={selectedUser.currentRole}
+                  onValueChange={(newRole) => updateRoleMutation.mutate({ staff: selectedUser, newRole })}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select a role" />
                   </SelectTrigger>
                   <SelectContent>
-                    {ROLES.map(r => (
-                      <SelectItem 
-                        key={r.value} 
-                        value={r.value}
-                        disabled={r.value === 'super_admin' && !isSuperAdmin} // ← REMOVED () from isSuperAdmin
+                    {ROLES.map(role => (
+                      <SelectItem
+                        key={role.value}
+                        value={role.value}
+                        disabled={role.value === 'super_admin' && !isSuperAdmin}
                       >
-                        {r.label}
+                        {role.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Note: Role changes take effect immediately on the next page refresh for the user.
+                  Role changes are saved immediately and reflected for the user after cache refresh or page reload.
                 </p>
               </div>
             </div>

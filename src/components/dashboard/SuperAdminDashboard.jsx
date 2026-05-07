@@ -45,13 +45,13 @@ export default function SuperAdminDashboard() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const activeStaff = staffList.filter(s => s.employment_status === 'Active');
   const onProbation = staffList.filter(s => s.employment_type === 'Probation');
   const incompleteProfiles = staffList.filter(s => (s.profile_completion_percentage || 0) < 80);
   const completedToday = todayReports.filter(r => r.status === 'Completed');
   const blockedTasks = todayReports.filter(r => r.status === 'Blocked');
   const pendingReview = todayReports.filter(r => r.review_status === 'Pending Review');
   const pendingCVs = staffList.length - userDocuments.filter(d => d.document_type === 'CV').length;
+  const dueForConfirmation = staffList.filter(s => s.confirmation_status === 'Pending');
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -89,12 +89,6 @@ export default function SuperAdminDashboard() {
           error={staffError}
         />
         <StatCard 
-          title="Active Today" 
-          value={activeStaff.length} 
-          icon={CheckCircle2}
-          loading={staffLoading}
-        />
-        <StatCard 
           title="Reports Today" 
           value={todayReports.length} 
           icon={ClipboardList}
@@ -103,12 +97,9 @@ export default function SuperAdminDashboard() {
         <StatCard 
           title="Completed Today" 
           value={completedToday.length} 
-          icon={FileCheck}
+          icon={CheckCircle2}
           loading={reportsLoading}
         />
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard 
           title="Blocked Tasks" 
           value={blockedTasks.length} 
@@ -116,6 +107,9 @@ export default function SuperAdminDashboard() {
           loading={reportsLoading}
           description={blockedTasks.length > 0 ? 'Needs attention' : 'All clear'}
         />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard 
           title="Pending CVs" 
           value={pendingCVs} 
@@ -127,6 +121,12 @@ export default function SuperAdminDashboard() {
           value={pendingReview.length} 
           icon={AlertCircle}
           loading={reportsLoading}
+        />
+        <StatCard 
+          title="Due for Confirmation" 
+          value={dueForConfirmation.length} 
+          icon={FileCheck}
+          loading={staffLoading}
         />
         <StatCard 
           title="Incomplete Profiles" 

@@ -17,7 +17,7 @@ export default function ManagerDashboard() {
     staleTime: 2 * 60 * 1000,
   });
 
-  const { data: staffList = [] } = useQuery({
+  const { data: staffList = [], isLoading: staffLoading } = useQuery({
     queryKey: ['staff-profiles'],
     queryFn: () => entities.StaffProfile.list('-created_at', 500),
     staleTime: 5 * 60 * 1000,
@@ -38,6 +38,12 @@ export default function ManagerDashboard() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard 
+          title="Total Staff" 
+          value={staffList.length} 
+          icon={Users}
+          loading={staffLoading}
+        />
+        <StatCard 
           title="Reports Today" 
           value={todayReports.length} 
           icon={ClipboardList}
@@ -55,6 +61,9 @@ export default function ManagerDashboard() {
           icon={AlertTriangle}
           loading={reportsLoading}
         />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard 
           title="Pending Reviews" 
           value={pendingReview.length} 

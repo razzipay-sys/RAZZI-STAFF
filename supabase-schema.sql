@@ -241,11 +241,36 @@ CREATE POLICY "workflow_modify" ON daily_workflow_reports FOR ALL TO authenticat
   USING (staff_id = (SELECT staff_id FROM staff_profiles WHERE user_id = auth.uid()::text) OR get_user_role() IN ('super_admin', 'admin', 'manager'));
 
 -- user_roles policies
-CREATE POLICY "roles_select" ON user_roles FOR SELECT TO authenticated
-  USING (email = auth.jwt()->>'email' OR get_user_role() IN ('super_admin', 'admin'));
+DROP POLICY IF EXISTS "roles_select" ON user_roles;
+DROP POLICY IF EXISTS "roles_insert" ON user_roles;
+DROP POLICY IF EXISTS "roles_update" ON user_roles;
+DROP POLICY IF EXISTS "roles_delete" ON user_roles;
+DROP POLICY IF EXISTS "roles_modify" ON user_roles;
 
-CREATE POLICY "roles_modify" ON user_roles FOR ALL TO authenticated
-  USING (get_user_role() = 'super_admin' OR (get_user_role() = 'admin' AND role != 'super_admin'));
+CREATE POLICY "roles_select" ON user_roles FOR SELECT TO authenticated
+  USING (lower(email) = lower(auth.jwt()->>'email') OR get_user_role() IN ('super_admin', 'admin'));
+
+CREATE POLICY "roles_insert" ON user_roles FOR INSERT TO authenticated
+  WITH CHECK (
+    get_user_role() = 'super_admin'
+    OR (get_user_role() = 'admin' AND role != 'super_admin')
+  );
+
+CREATE POLICY "roles_update" ON user_roles FOR UPDATE TO authenticated
+  USING (
+    get_user_role() = 'super_admin'
+    OR (get_user_role() = 'admin' AND role != 'super_admin')
+  )
+  WITH CHECK (
+    get_user_role() = 'super_admin'
+    OR (get_user_role() = 'admin' AND role != 'super_admin')
+  );
+
+CREATE POLICY "roles_delete" ON user_roles FOR DELETE TO authenticated
+  USING (
+    get_user_role() = 'super_admin'
+    OR (get_user_role() = 'admin' AND role != 'super_admin')
+  );
 
 -- Seed first super admin
 INSERT INTO user_roles (email, role, assigned_by)

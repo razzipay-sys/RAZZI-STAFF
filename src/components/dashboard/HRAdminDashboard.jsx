@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import StatCard from '@/components/ui/StatCard';
 import { DashCard, DashListRow } from './DashboardShared';
+import { format } from 'date-fns';
 
 export default function HRAdminDashboard() {
   const { data: staffList = [], isLoading: staffLoading } = useQuery({
@@ -23,10 +24,19 @@ export default function HRAdminDashboard() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const { data: todayReports = [], isLoading: reportsLoading } = useQuery({
+    queryKey: ['today-reports', format(new Date(), 'yyyy-MM-dd')],
+    queryFn: () => entities.DailyWorkflowReport.filter({ 
+      report_date: format(new Date(), 'yyyy-MM-dd') 
+    }),
+    staleTime: 2 * 60 * 1000,
+  });
+
   const totalStaff = staffList.length;
   const incompleteProfiles = staffList.filter(s => (s.profile_completion_percentage || 0) < 80);
-  const dueProbation = staffList.filter(s => s.employment_type === 'Probation');
+  const dueProbation = staffList.filter(s => s.confirmation_status === 'Pending' || s.employment_type === 'Probation');
   const pendingCVs = staffList.length - userDocuments.filter(d => d.document_type === 'CV').length;
+  const pendingReview = todayReports.filter(r => r.review_status === 'Pending Review');
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -45,10 +55,25 @@ export default function HRAdminDashboard() {
           loading={staffLoading}
         />
         <StatCard 
+          title="Reports Today" 
+          value={todayReports.length} 
+          icon={CheckCircle2}
+          loading={reportsLoading}
+        />
+        <StatCard 
+          title="Pending Reviews" 
+          value={pendingReview.length} 
+          icon={Clock}
+          loading={reportsLoading}
+        />
+        <StatCard 
           title="Pending CVs" 
           value={pendingCVs} 
           icon={FileText}
         />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard 
           title="Due for Confirmation" 
           value={dueProbation.length} 

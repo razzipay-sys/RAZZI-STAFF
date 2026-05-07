@@ -1,7 +1,6 @@
-import { useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
 import { useQuery } from '@tanstack/react-query';
-import { entities } from './supabaseEntities';
+import supabase from './supabase';
 
 export const ROLE_PERMISSIONS = {
   super_admin: {
@@ -50,41 +49,66 @@ export const ROLE_PERMISSIONS = {
 
 export default function useRoleAccess() {
   const { user } = useAuth();
-  
-  // Fetch role from user_roles table with better caching
-  const { data: dbRoleData, isLoading: loadingRole, error: roleError } = useQuery({
+
+  // Fetch role from user_roles table with comprehensive error handling
+  const { data: dbRoleData, isLoading: loadingRole } = useQuery({
     queryKey: ['user-role', user?.email],
     queryFn: async () => {
       if (!user?.email) return null;
       try {
-        const roles = await entities.UserRole.filter({ email: user.email });
-        return roles[0] || null;
+        const { data, error } = await supabase
+          .from('user_roles')
+          .select('*')
+          .ilike('email', user.email)
+          .maybeSingle();
+
+        if (error) throw error;
+        return data || null;
       } catch (err) {
-        // RLS denied or network error - log in dev, silently fallback in prod
-        if (process.env.NODE_ENV === 'development') {
-          console.warn('[useRoleAccess] Failed to fetch role from database:', err.message);
+        if (import.meta.env.DEV) {
+          console.warn('[useRoleAccess] DB role fetch failed:', err.message);
         }
-        return null; // Will fallback to VITE_SUPER_ADMIN_EMAIL or user metadata
+        return null;
       }
     },
     enabled: !!user?.email,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 0,
     retry: 1,
+    gcTime: 10 * 60 * 1000,
   });
 
   const getRole = () => {
     if (!user) return 'guest';
-    
-    // 1. Super Admin Override (from env var)
-    if (user.email === import.meta.env.VITE_SUPER_ADMIN_EMAIL) return 'super_admin';
-    
-    // 2. Database Role
-    if (dbRoleData?.role) return dbRoleData.role;
-    
-    // 3. Metadata Fallback
-    if (user.user_metadata?.role) return user.user_metadata.role;
-    
-    // 4. Default
+
+    // 1. Super Admin Override (from env var) - highest priority
+    const superAdminEmail = import.meta.env.VITE_SUPER_ADMIN_EMAIL;
+    if (superAdminEmail && user.email?.toLowerCase() === superAdminEmail.toLowerCase()) {
+      if (import.meta.env.DEV) {
+        console.log('[useRoleAccess] Using VITE_SUPER_ADMIN_EMAIL override');
+      }
+      return 'super_admin';
+    }
+
+    // 2. Database Role (from user_roles table)
+    if (dbRoleData?.role) {
+      if (import.meta.env.DEV) {
+        console.log('[useRoleAccess] Using DB role:', dbRoleData.role);
+      }
+      return dbRoleData.role;
+    }
+
+    // 3. User Metadata Fallback (from auth user metadata)
+    if (user.user_metadata?.role) {
+      if (import.meta.env.DEV) {
+        console.log('[useRoleAccess] Using user metadata role:', user.user_metadata.role);
+      }
+      return user.user_metadata.role;
+    }
+
+    // 4. Default to 'user' (staff role)
+    if (import.meta.env.DEV) {
+      console.log('[useRoleAccess] Using default role: user');
+    }
     return 'user';
   };
 
@@ -96,8 +120,8 @@ export default function useRoleAccess() {
     role,
     permissions,
     isLoading: loadingRole,
-    isAdmin: ['admin', 'super_admin'].includes(role), // BOOLEAN, not function
-    isSuperAdmin: role === 'super_admin', // BOOLEAN, not function
+    isAdmin: ['admin', 'super_admin'].includes(role), // Boolean, not function
+    isSuperAdmin: role === 'super_admin', // Boolean, not function
     hasPermission: (perm) => !!permissions[perm], // Function for custom permissions
     canManageRoles: !!permissions.canManageRoles,
     canEditSettings: !!permissions.canEditSettings

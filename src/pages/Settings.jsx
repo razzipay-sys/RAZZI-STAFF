@@ -69,7 +69,7 @@ export default function Settings() {
         const profiles = await entities.StaffProfile.filter({ email: authUser.email });
         return profiles[0] || null;
       } catch (err) {
-        if (process.env.NODE_ENV === 'development') {
+        if (import.meta.env.DEV) {
           console.warn('[Settings] Failed to fetch staff profile:', err.message);
         }
         return null;
@@ -87,13 +87,13 @@ export default function Settings() {
       try {
         return await entities.AppSetting.list();
       } catch (err) {
-        if (process.env.NODE_ENV === 'development') {
+        if (import.meta.env.DEV) {
           console.warn('[Settings] Failed to fetch app settings:', err.message);
         }
         return [];
       }
     },
-    enabled: isAdmin, // FIX: Changed from isAdmin() to isAdmin (boolean)
+    enabled: isAdmin,
     staleTime: 5 * 60 * 1000,
     retry: 1,
   });
@@ -123,7 +123,6 @@ export default function Settings() {
 
   const saveSettingsMutation = useMutation({
     mutationFn: async () => {
-      // FIX: Changed from if (!isAdmin()) to if (!isAdmin)
       if (!isAdmin) return;
       
       const identity = { 
@@ -290,7 +289,6 @@ export default function Settings() {
       </Section>
 
       {/* Admin-only Global Settings */}
-      {/* FIX: Changed from {isAdmin() && ( to {isAdmin && ( */}
       {isAdmin && (
         <>
           <Section title="Company & App Identity" icon={Building2}>
