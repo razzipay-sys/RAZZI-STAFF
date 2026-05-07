@@ -36,7 +36,7 @@ export default function StaffForm() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { logAction } = useAuditLog();
-  const { isAdmin } = useRoleAccess();
+  const { isAdmin, hasPermission } = useRoleAccess();
   const urlParams = new URLSearchParams(window.location.search);
   const editId = urlParams.get('edit');
 
@@ -49,11 +49,30 @@ export default function StaffForm() {
     enabled: !!editId,
   });
 
+  // Get the latest staff to generate the next ID
+  const { data: allStaff = [] } = useQuery({
+    queryKey: ['staff-profiles-brief'],
+    queryFn: () => entities.StaffProfile.list('-created_at', 1),
+    enabled: !editId,
+  });
+
   useEffect(() => {
     if (existingStaff && existingStaff[0]) {
       setForm(existingStaff[0]);
     }
   }, [existingStaff]);
+
+  const generateStaffId = () => {
+    const lastStaff = allStaff[0];
+    let nextNum = 1;
+    
+    if (lastStaff && lastStaff.staff_id && lastStaff.staff_id.startsWith('RP-')) {
+      const lastNum = parseInt(lastStaff.staff_id.split('-')[1]);
+      if (!isNaN(lastNum)) nextNum = lastNum + 1;
+    }
+    
+    return `RP-${nextNum.toString().padStart(4, '0')}`;
+  };
 
   const mutation = useMutation({
     mutationFn: async (data) => {
@@ -65,11 +84,16 @@ export default function StaffForm() {
           notes: 'Staff profile updated'
         });
       } else {
-        const result = await entities.StaffProfile.create(data);
+        // Auto-generate Staff ID for new profiles
+        const finalData = {
+          ...data,
+          staff_id: generateStaffId()
+        };
+        const result = await entities.StaffProfile.create(finalData);
         await logAction({
           actionType: 'CREATE', entityType: 'StaffProfile',
           entityId: result?.id, entityName: data.full_name,
-          notes: 'New staff profile created'
+          notes: `New staff profile created with ID: ${finalData.staff_id}`
         });
       }
     },
@@ -137,8 +161,12 @@ export default function StaffForm() {
                   <Input value={form.full_name} onChange={e => updateField('full_name', e.target.value)} required />
                 </div>
                 <div className="space-y-2">
-                  <Label>Staff ID</Label>
-                  <Input value={form.staff_id} onChange={e => updateField('staff_id', e.target.value)} placeholder="e.g. RP-001" />
+                  <Label>Staff ID (Auto-generated)</Label>
+                  <Input 
+                    value={editId ? form.staff_id : (allStaff.length > 0 ? generateStaffId() : 'Generating...')} 
+                    disabled 
+                    className="bg-muted font-mono"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Email *</Label>
@@ -203,6 +231,22 @@ export default function StaffForm() {
                   <Label>Reporting Manager</Label>
                   <Input value={form.manager_name} onChange={e => updateField('manager_name', e.target.value)} />
                 </div>
+                {hasPermission('canManageRoles') && (
+                  <div className="space-y-2">
+                    <Label>System Role</Label>
+                    <Select value={form.role} onValueChange={v => updateField('role', v)}>
+                      <SelectTrigger><SelectValue placeholder="Assign a role" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="user">Staff (Default)</SelectItem>
+                        <SelectItem value="manager">Manager</SelectItem>
+                        <SelectItem value="hr_admin">HR Admin</SelectItem>
+                        <SelectItem value="finance_admin">Finance Admin</SelectItem>
+                        <SelectItem value="admin">Admin</SelectItem>
+                        {isAdmin() && <SelectItem value="super_admin">Super Admin</SelectItem>}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

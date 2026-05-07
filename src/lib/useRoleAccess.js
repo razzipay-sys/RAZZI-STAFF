@@ -7,12 +7,14 @@ const ROLE_PERMISSIONS = {
     canEditSalary: true, canViewDocuments: true, canEditDocuments: true,
     canViewWorkflow: true, canEditWorkflow: true, canReviewReports: true,
     canViewAuditLogs: true, canExport: true, canDeleteRecords: true,
+    canManageRoles: true,
   },
   admin: {
     canViewAllStaff: true, canEditStaff: true, canViewSalary: false,
     canEditSalary: false, canViewDocuments: true, canEditDocuments: true,
     canViewWorkflow: true, canEditWorkflow: true, canReviewReports: true,
     canViewAuditLogs: true, canExport: true, canDeleteRecords: false,
+    canManageRoles: true,
   },
   hr_admin: {
     canViewAllStaff: true, canEditStaff: true, canViewSalary: false,
