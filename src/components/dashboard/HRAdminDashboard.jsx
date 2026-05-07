@@ -1,58 +1,82 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { entities } from '@/lib/supabaseEntities';
-import { Users, FileText, Cake, ShieldAlert, UserPlus } from 'lucide-react';
+import { Users, FileText, Clock, AlertTriangle, CheckCircle2, Briefcase } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import StatCard from '@/components/ui/StatCard';
-import { DashCard, DashListRow, EmptyNote } from './DashboardShared';
-import { format, parseISO, isAfter, addDays } from 'date-fns';
+import { DashCard, DashListRow } from './DashboardShared';
 
 export default function HRAdminDashboard() {
-  const { data: staffList = [] } = useQuery({
+  const { data: staffList = [], isLoading: staffLoading } = useQuery({
     queryKey: ['staff-profiles'],
     queryFn: () => entities.StaffProfile.list('-created_at', 500),
+    staleTime: 5 * 60 * 1000,
   });
 
-  const now = new Date();
-  const next30Days = addDays(now, 30);
-  
-  const upcomingBirthdays = staffList.filter(s => {
-    if (!s.date_of_birth) return false;
-    const dob = parseISO(s.date_of_birth);
-    const thisYearDob = new Date(now.getFullYear(), dob.getMonth(), dob.getDate());
-    return isAfter(thisYearDob, now) && isAfter(next30Days, thisYearDob);
+  const { data: userDocuments = [] } = useQuery({
+    queryKey: ['pending-documents'],
+    queryFn: async () => {
+      const docs = await entities.StaffDocument.list('-created_at', 500);
+      return docs.filter(d => !d.document_status || d.document_status === 'Pending');
+    },
+    staleTime: 5 * 60 * 1000,
   });
 
-  const missingCVs = staffList.filter(s => s.employment_status === 'Active' && !s.profile_photo_url); // Placeholder logic for missing docs
+  const totalStaff = staffList.length;
+  const incompleteProfiles = staffList.filter(s => (s.profile_completion_percentage || 0) < 80);
+  const dueProbation = staffList.filter(s => s.employment_type === 'Probation');
+  const pendingCVs = staffList.length - userDocuments.filter(d => d.document_type === 'CV').length;
 
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="flex justify-between items-end">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">HR Console</h2>
-          <p className="text-muted-foreground">Onboarding, records, and staff engagement.</p>
+          <h2 className="text-3xl font-bold tracking-tight">HR Admin Dashboard</h2>
+          <p className="text-muted-foreground">Manage onboarding, documents, and staff records.</p>
         </div>
-        <Link to="/staff/new"><Button size="sm"><UserPlus className="w-4 h-4 mr-2" /> New Hire</Button></Link>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Total Staff" value={staffList.length} icon={Users} />
-        <StatCard title="Upcoming Birthdays" value={upcomingBirthdays.length} icon={Cake} />
-        <StatCard title="Missing Documents" value={missingCVs.length} icon={FileText} />
-        <StatCard title="Probation Ends" value={staffList.filter(s => s.employment_type === 'Probation').length} icon={ShieldAlert} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard 
+          title="Total Staff" 
+          value={totalStaff} 
+          icon={Users}
+          loading={staffLoading}
+        />
+        <StatCard 
+          title="Pending CVs" 
+          value={pendingCVs} 
+          icon={FileText}
+        />
+        <StatCard 
+          title="Due for Confirmation" 
+          value={dueProbation.length} 
+          icon={Clock}
+          loading={staffLoading}
+        />
+        <StatCard 
+          title="Incomplete Profiles" 
+          value={incompleteProfiles.length} 
+          icon={AlertTriangle}
+          loading={staffLoading}
+        />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <DashCard title="Birthday Reminders" icon={Cake} to="/calendar">
-          {upcomingBirthdays.length === 0 ? <EmptyNote text="No birthdays in next 30 days" /> : 
-            upcomingBirthdays.map(s => <DashListRow key={s.id} name={s.full_name} sub={s.department} right={format(parseISO(s.date_of_birth), 'MMM d')} />)
-          }
+        <DashCard title="Onboarding Queue" icon={Briefcase}>
+          <DashListRow name="Pending Documents" right={userDocuments.length} />
+          <DashListRow name="Incomplete Profiles" right={incompleteProfiles.length} />
+          <DashListRow name="On Probation" right={dueProbation.length} />
         </DashCard>
 
-        <DashCard title="Onboarding Checklist" icon={ShieldAlert}>
-          <DashListRow name="Incomplete Profiles" right={staffList.filter(s => (s.profile_completion_percentage || 0) < 100).length} />
-          <DashListRow name="Missing CVs" right={missingCVs.length} />
+        <DashCard title="Quick Actions" icon={CheckCircle2}>
+          <Link to="/staff" className="block mb-2">
+            <Button variant="outline" size="sm" className="w-full justify-start">View All Staff</Button>
+          </Link>
+          <Link to="/documents">
+            <Button variant="outline" size="sm" className="w-full justify-start">Manage Documents</Button>
+          </Link>
         </DashCard>
       </div>
     </div>

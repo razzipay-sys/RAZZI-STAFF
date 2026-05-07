@@ -75,7 +75,7 @@ export default function Settings() {
   const { data: dbSettings = [], isLoading: loadingSettings } = useQuery({
     queryKey: ['app-settings'],
     queryFn: () => entities.AppSetting.list(),
-    enabled: isAdmin(),
+    enabled: isAdmin, // ← CHANGED: was isAdmin()
   });
 
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
@@ -97,7 +97,7 @@ export default function Settings() {
 
   const saveSettingsMutation = useMutation({
     mutationFn: async () => {
-      if (!isAdmin()) return;
+      if (!isAdmin) return; // ← CHANGED: was if (!isAdmin())
       
       const identity = { company_name: settings.company_name, app_name: settings.app_name };
       const schedule = { 
@@ -111,10 +111,23 @@ export default function Settings() {
         salary_reminder_days: settings.salary_reminder_days
       };
 
+      // IMPORTANT: Use upsert for app_settings (update by setting_key, not id)
       const promises = [
-        entities.AppSetting.update('company_identity', { setting_value: identity }),
-        entities.AppSetting.update('work_schedule', { setting_value: schedule }),
-        entities.AppSetting.update('reminders', { setting_value: reminders })
+        supabase.from('app_settings').upsert({
+          setting_key: 'company_identity',
+          setting_value: identity,
+          updated_by: authUser?.id
+        }, { onConflict: 'setting_key' }),
+        supabase.from('app_settings').upsert({
+          setting_key: 'work_schedule',
+          setting_value: schedule,
+          updated_by: authUser?.id
+        }, { onConflict: 'setting_key' }),
+        supabase.from('app_settings').upsert({
+          setting_key: 'reminders',
+          setting_value: reminders,
+          updated_by: authUser?.id
+        }, { onConflict: 'setting_key' })
       ];
       
       await Promise.all(promises);
@@ -154,7 +167,7 @@ export default function Settings() {
     }
   };
 
-  if (loadingProfile || (isAdmin() && loadingSettings)) {
+  if (loadingProfile || (isAdmin && loadingSettings)) { // ← CHANGED: was isAdmin()
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Loader2 className="w-8 h-8 text-primary animate-spin" />
@@ -272,7 +285,7 @@ export default function Settings() {
         </>
       )}
 
-      {/* Role Access Information (Visible to all, but only for info) */}
+      {/* Role Access Information (Only show "Your Role" to non-admins, full matrix to admins) */}
       <Section title="System Access" icon={Shield}>
         <div className="space-y-2">
           {[
@@ -282,7 +295,9 @@ export default function Settings() {
             { role: 'finance_admin', label: 'Finance Admin', desc: 'Salary and bank information only. Read-only on staff.' },
             { role: 'manager', label: 'Manager', desc: 'View team workflow reports, submit reviews. No HR data.' },
             { role: 'user', label: 'Staff', desc: 'Submit daily reports and view own profile only.' },
-          ].map(r => (
+          ]
+          .filter(r => isAdmin || r.role === role)
+          .map(r => (
             <div key={r.role} className={`flex items-start gap-3 p-3 rounded-lg border ${role === r.role ? 'border-primary bg-primary/5 shadow-sm' : 'border-border'}`}>
               <div className="flex-1">
                 <p className="text-sm font-semibold">{r.label}

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { entities } from '@/lib/supabaseEntities';
+import { useAuth } from '@/lib/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Search, Shield, UserPlus, UserCog, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -27,37 +28,45 @@ const ROLES = [
 
 export default function AccessControl() {
   const queryClient = useQueryClient();
-  const { role: currentUserRole, isSuperAdmin, hasPermission } = useRoleAccess();
+  const { user: authUser } = useAuth();
+  const { role: currentUserRole, isSuperAdmin, hasPermission } = useRoleAccess(); // ← REMOVED () from isSuperAdmin
   const { logAction } = useAuditLog();
+  const [searchTab, setSearchTab] = useState('staff');
   const [search, setSearch] = useState('');
+  const [manualEmail, setManualEmail] = useState('');
   const [selectedUser, setSelectedUser] = useState(null);
 
   // Fetch all profiles to link roles to users
   const { data: staffList = [], isLoading: loadingStaff } = useQuery({
     queryKey: ['staff-profiles-access'],
     queryFn: () => entities.StaffProfile.list('-created_at', 500),
+    staleTime: 2 * 60 * 1000, // 2 minutes
   });
 
   // Fetch current roles from user_roles table
   const { data: userRoles = [], isLoading: loadingRoles } = useQuery({
     queryKey: ['user-roles-list'],
     queryFn: () => entities.UserRole.list(),
+    staleTime: 2 * 60 * 1000, // 2 minutes
   });
 
   const updateRoleMutation = useMutation({
-    mutationFn: async ({ userId, email, newRole }) => {
+    mutationFn: async ({ email, newRole }) => {
+      // Safety checks
+      if (newRole === 'super_admin' && !isSuperAdmin) { // ← REMOVED () from isSuperAdmin
+        throw new Error('Only Super Admins can assign the Super Admin role');
+      }
+
       // Find if user already has a role
-      const existing = userRoles.find(r => r.email === email);
+      const existing = userRoles.find(r => r.email?.toLowerCase() === email.toLowerCase());
       
       if (existing) {
         await entities.UserRole.update(existing.id, { 
           role: newRole,
-          user_id: userId, // Ensure user_id is updated if missing
           updated_at: new Date().toISOString()
         });
       } else {
         await entities.UserRole.create({
-          user_id: userId,
           email: email,
           role: newRole,
           assigned_by: currentUserRole
@@ -67,7 +76,6 @@ export default function AccessControl() {
       await logAction({
         actionType: 'ROLE_CHANGE',
         entityType: 'UserRole',
-        entityId: userId,
         entityName: email,
         notes: `Role changed from ${existing?.role || 'user'} to ${newRole}`
       });
@@ -77,24 +85,32 @@ export default function AccessControl() {
       queryClient.invalidateQueries({ queryKey: ['user-role'] });
       toast.success('User role updated successfully');
       setSelectedUser(null);
+      setManualEmail('');
     },
     onError: (err) => {
       toast.error(err.message || 'Failed to update role');
     }
   });
 
-  const filteredStaff = staffList.filter(s => 
-    !search || 
-    s.full_name?.toLowerCase().includes(search.toLowerCase()) || 
-    s.email?.toLowerCase().includes(search.toLowerCase()) ||
-    s.staff_id?.toLowerCase().includes(search.toLowerCase())
-  );
+  // Improved search: case-insensitive, staff_id support
+  const filteredStaff = staffList.filter(s => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (
+      s.full_name?.toLowerCase().includes(q) || 
+      s.email?.toLowerCase().includes(q) ||
+      s.staff_id?.toLowerCase().includes(q) ||
+      s.department?.toLowerCase().includes(q)
+    );
+  });
 
   if (!hasPermission('canManageRoles')) {
     return <EmptyState icon={Shield} title="Access Restricted" description="You don't have permission to manage roles." />;
   }
 
   if (loadingStaff || loadingRoles) return <PageLoader />;
+
+  const noResults = filteredStaff.length === 0;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -109,7 +125,7 @@ export default function AccessControl() {
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input 
-            placeholder="Search users by name, email, or ID..." 
+            placeholder="Search by registered email, staff ID, name, or department..." 
             value={search} 
             onChange={e => setSearch(e.target.value)} 
             className="pl-10" 
@@ -124,40 +140,50 @@ export default function AccessControl() {
               <TableRow className="bg-muted/50">
                 <TableHead>User / Staff</TableHead>
                 <TableHead>Email</TableHead>
+                <TableHead>Staff ID</TableHead>
                 <TableHead>Current Role</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredStaff.map(staff => {
-                const roleData = userRoles.find(r => r.email === staff.email);
-                const currentRole = roleData?.role || 'user';
-                
-                return (
-                  <TableRow key={staff.id}>
-                    <TableCell>
-                      <div className="flex flex-col">
-                        <span className="font-medium text-sm">{staff.full_name}</span>
-                        <span className="text-xs text-muted-foreground font-mono">{staff.staff_id}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm">{staff.email}</TableCell>
-                    <TableCell>
-                      <StatusBadge status={currentRole.replace('_', ' ')} />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        onClick={() => setSelectedUser({ ...staff, currentRole })}
-                        disabled={currentRole === 'super_admin' && !isSuperAdmin}
-                      >
-                        <UserCog className="w-4 h-4 mr-2" /> Manage
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
+              {noResults ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-8">
+                    <p className="text-muted-foreground">No matching registered staff/user found.</p>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredStaff.map(staff => {
+                  const roleData = userRoles.find(r => r.email?.toLowerCase() === staff.email?.toLowerCase());
+                  const currentRole = roleData?.role || 'user';
+                  
+                  return (
+                    <TableRow key={staff.id}>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="font-medium text-sm">{staff.full_name}</span>
+                          <span className="text-xs text-muted-foreground">{staff.department || 'N/A'}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm">{staff.email}</TableCell>
+                      <TableCell className="text-sm font-mono text-xs">{staff.staff_id || 'N/A'}</TableCell>
+                      <TableCell>
+                        <StatusBadge status={currentRole.replace('_', ' ')} />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => setSelectedUser({ ...staff, currentRole })}
+                          disabled={currentRole === 'super_admin' && !isSuperAdmin} // ← REMOVED () from isSuperAdmin
+                        >
+                          <UserCog className="w-4 h-4 mr-2" /> Manage
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
             </TableBody>
           </Table>
         </div>
@@ -187,12 +213,15 @@ export default function AccessControl() {
                   defaultValue={selectedUser.currentRole} 
                   onValueChange={(val) => {
                     // Safety checks
-                    if (val === 'super_admin' && !isSuperAdmin) {
+                    if (val === 'super_admin' && !isSuperAdmin) { // ← REMOVED () from isSuperAdmin
                       toast.error('Only Super Admins can assign the Super Admin role');
                       return;
                     }
+                    if (selectedUser.currentRole === 'super_admin' && !isSuperAdmin) { // ← REMOVED () from isSuperAdmin
+                      toast.error('Only Super Admins can change a Super Admin role');
+                      return;
+                    }
                     updateRoleMutation.mutate({ 
-                      userId: selectedUser.id, 
                       email: selectedUser.email, 
                       newRole: val 
                     });
@@ -206,7 +235,7 @@ export default function AccessControl() {
                       <SelectItem 
                         key={r.value} 
                         value={r.value}
-                        disabled={r.value === 'super_admin' && !isSuperAdmin}
+                        disabled={r.value === 'super_admin' && !isSuperAdmin} // ← REMOVED () from isSuperAdmin
                       >
                         {r.label}
                       </SelectItem>

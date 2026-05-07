@@ -1,51 +1,90 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { entities } from '@/lib/supabaseEntities';
-import { DollarSign, Building2, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Users, DollarSign, AlertTriangle, CreditCard, TrendingUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import StatCard from '@/components/ui/StatCard';
-import { DashCard, DashListRow, EmptyNote } from './DashboardShared';
+import { DashCard, DashListRow } from './DashboardShared';
 
 export default function FinanceAdminDashboard() {
-  const { data: bankRecords = [] } = useQuery({
-    queryKey: ['bank-details'],
-    queryFn: () => entities.StaffBankDetails.list(),
-  });
-
-  const { data: staffList = [] } = useQuery({
+  const { data: staffList = [], isLoading: staffLoading } = useQuery({
     queryKey: ['staff-profiles'],
-    queryFn: () => entities.StaffProfile.list(),
+    queryFn: () => entities.StaffProfile.list('-created_at', 500),
+    staleTime: 5 * 60 * 1000,
   });
 
-  const missingBank = staffList.filter(s => s.employment_status === 'Active' && !bankRecords.some(b => b.staff_id === s.staff_id));
+  const { data: bankDetails = [] } = useQuery({
+    queryKey: ['bank-details-incomplete'],
+    queryFn: async () => {
+      const details = await entities.StaffBankDetails.list();
+      return details;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const missingBankDetails = staffList.filter(s => {
+    const bd = bankDetails.find(b => b.staff_id === s.staff_id);
+    return !bd || !bd.account_number || !bd.bank_name;
+  });
+
+  const incompleteProfiles = staffList.filter(s => (s.profile_completion_percentage || 0) < 80);
 
   return (
     <div className="space-y-8 animate-fade-in">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Finance Dashboard</h2>
-        <p className="text-muted-foreground">Payroll oversight and bank details management.</p>
+      <div className="flex justify-between items-end">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Finance Admin Dashboard</h2>
+          <p className="text-muted-foreground">Manage payroll, salary, and financial records.</p>
+        </div>
+        <Link to="/salary">
+          <Button size="sm">
+            <DollarSign className="w-4 h-4 mr-2" /> Manage Salary
+          </Button>
+        </Link>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Staff with Bank" value={bankRecords.length} icon={Building2} />
-        <StatCard title="Missing Bank" value={missingBank.length} icon={AlertTriangle} />
-        <StatCard title="Total Active" value={staffList.filter(s => s.employment_status === 'Active').length} icon={DollarSign} />
-        <StatCard title="Pending Payouts" value={0} icon={CheckCircle2} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard 
+          title="Total Staff" 
+          value={staffList.length} 
+          icon={Users}
+          loading={staffLoading}
+        />
+        <StatCard 
+          title="Missing Bank Details" 
+          value={missingBankDetails.length} 
+          icon={CreditCard}
+          loading={staffLoading}
+        />
+        <StatCard 
+          title="Active Salaries" 
+          value={staffList.filter(s => s.employment_status === 'Active').length} 
+          icon={TrendingUp}
+          loading={staffLoading}
+        />
+        <StatCard 
+          title="Incomplete Profiles" 
+          value={incompleteProfiles.length} 
+          icon={AlertTriangle}
+          loading={staffLoading}
+        />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <DashCard title="Missing Bank Records" icon={AlertTriangle} to="/salary">
-          {missingBank.length === 0 ? <EmptyNote text="All active staff have bank details" /> : 
-            missingBank.slice(0, 5).map(s => <DashListRow key={s.id} name={s.full_name} sub={s.department} right={s.staff_id} />)
-          }
+        <DashCard title="Finance Summary" icon={DollarSign}>
+          <DashListRow name="Staff with Complete Details" right={staffList.length - missingBankDetails.length} />
+          <DashListRow name="Missing Bank Details" right={missingBankDetails.length} />
+          <DashListRow name="Active on Payroll" right={staffList.filter(s => s.employment_status === 'Active').length} />
         </DashCard>
 
-        <DashCard title="Quick Actions" icon={DollarSign}>
-          <div className="space-y-2">
-            <Link to="/salary"><Button className="w-full justify-start" variant="outline">Manage Salary Records</Button></Link>
-            <Button className="w-full justify-start" variant="outline" disabled>Export Payroll CSV</Button>
-          </div>
+        <DashCard title="Quick Links" icon={CreditCard}>
+          <Link to="/salary" className="block mb-2">
+            <Button variant="outline" size="sm" className="w-full justify-start">View Salaries</Button>
+          </Link>
+          <Link to="/staff">
+            <Button variant="outline" size="sm" className="w-full justify-start">Update Bank Details</Button>
+          </Link>
         </DashCard>
       </div>
     </div>

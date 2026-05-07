@@ -2,12 +2,14 @@ import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { entities } from '@/lib/supabaseEntities';
 import { useAuth } from '@/lib/AuthContext';
-import { UserCheck, ClipboardList, CalendarDays, ArrowRight } from 'lucide-react';
+import { UserCheck, ClipboardList, CalendarDays, ArrowRight, AlertCircle, TrendingUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import StatCard from '@/components/ui/StatCard';
 import { DashCard, DashListRow, EmptyNote } from './DashboardShared';
 import StatusBadge from '@/components/ui/StatusBadge';
+import { format } from 'date-fns';
 
 export default function StaffDashboard() {
   const { user } = useAuth();
@@ -19,23 +21,91 @@ export default function StaffDashboard() {
       return p[0] || null;
     },
     enabled: !!user?.email,
+    staleTime: 5 * 60 * 1000,
   });
 
-  const { data: myReports = [] } = useQuery({
+  const { data: myReports = [], isLoading: reportsLoading } = useQuery({
     queryKey: ['my-reports', profile?.staff_id],
-    queryFn: () => entities.DailyWorkflowReport.filter({ staff_id: profile.staff_id }, '-report_date', 5),
+    queryFn: () => entities.DailyWorkflowReport.filter({ 
+      staff_id: profile.staff_id 
+    }, '-report_date', 10),
     enabled: !!profile?.staff_id,
+    staleTime: 2 * 60 * 1000,
   });
+
+  const { data: myPendingReviews = [] } = useQuery({
+    queryKey: ['my-pending-reviews', profile?.staff_id],
+    queryFn: async () => {
+      const reports = await entities.DailyWorkflowReport.filter({ 
+        staff_id: profile.staff_id 
+      });
+      return reports.filter(r => r.review_status === 'Pending Review');
+    },
+    enabled: !!profile?.staff_id,
+    staleTime: 2 * 60 * 1000,
+  });
+
+  const thisMonthReports = myReports.filter(r => {
+    const reportMonth = new Date(r.report_date).getMonth();
+    return reportMonth === new Date().getMonth();
+  });
+
+  const completedReports = myReports.filter(r => r.status === 'Completed');
+
+  if (!profile) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Welcome</h2>
+          <p className="text-muted-foreground">Your profile is being set up...</p>
+        </div>
+        <Card>
+          <CardContent className="pt-6 text-center">
+            <AlertCircle className="w-12 h-12 text-warning mx-auto mb-4 opacity-50" />
+            <p className="text-muted-foreground">Your staff profile has not been linked yet.</p>
+            <p className="text-sm text-muted-foreground mt-2">Please contact your administrator to link your profile to your email: {user?.email}</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 animate-fade-in">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">Hello, {profile?.full_name?.split(' ')[0] || 'Staff'}</h2>
+        <h2 className="text-3xl font-bold tracking-tight">Hello, {profile?.full_name?.split(' ')[0] || 'Staff'}</h2>
         <p className="text-muted-foreground">Keep your reports up to date and check your schedule.</p>
       </div>
 
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard 
+          title="My Reports This Month" 
+          value={thisMonthReports.length} 
+          icon={ClipboardList}
+          loading={reportsLoading}
+        />
+        <StatCard 
+          title="Reports Today" 
+          value={myReports.filter(r => r.report_date === format(new Date(), 'yyyy-MM-dd')).length} 
+          icon={TrendingUp}
+          loading={reportsLoading}
+        />
+        <StatCard 
+          title="Completed" 
+          value={completedReports.length} 
+          icon={UserCheck}
+          loading={reportsLoading}
+        />
+        <StatCard 
+          title="Pending Reviews" 
+          value={myPendingReviews.length} 
+          icon={AlertCircle}
+          loading={reportsLoading}
+        />
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="md:col-span-2 border-white/5 bg-white/5 backdrop-blur-sm">
+        <Card className="md:col-span-2 border-white/5 bg-gradient-to-br from-white/5 to-white/[0.02]">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <ClipboardList className="w-5 h-5 text-primary" />
@@ -69,11 +139,11 @@ export default function StaffDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <DashCard title="My Recent Reports" icon={ClipboardList} to="/workflow">
           {myReports.length === 0 ? <EmptyNote text="No reports submitted yet" /> : 
-            myReports.map(r => (
+            myReports.slice(0, 5).map(r => (
               <DashListRow 
                 key={r.id} 
                 name={r.report_date} 
-                sub={r.assigned_task} 
+                sub={r.assigned_task?.substring(0, 40)} 
                 right={<StatusBadge status={r.status} />} 
               />
             ))
@@ -82,8 +152,15 @@ export default function StaffDashboard() {
 
         <DashCard title="Quick Links" icon={CalendarDays}>
           <div className="space-y-2">
-            <Link to="/calendar"><Button className="w-full justify-start" variant="outline" size="sm">HR Calendar</Button></Link>
-            <Link to="/settings"><Button className="w-full justify-start" variant="outline" size="sm">My Account Settings</Button></Link>
+            <Link to="/calendar">
+              <Button className="w-full justify-start" variant="outline" size="sm">HR Calendar</Button>
+            </Link>
+            <Link to="/settings">
+              <Button className="w-full justify-start" variant="outline" size="sm">My Account Settings</Button>
+            </Link>
+            <Link to="/workflow">
+              <Button className="w-full justify-start" variant="outline" size="sm">Submit Report</Button>
+            </Link>
           </div>
         </DashCard>
       </div>

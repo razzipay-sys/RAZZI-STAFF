@@ -188,11 +188,25 @@ ALTER TABLE audit_logs            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_roles            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app_settings          ENABLE ROW LEVEL SECURITY;
 
--- Helper: Get current user role from user_roles table
-CREATE OR REPLACE FUNCTION get_user_role()
-RETURNS TEXT AS $$
-  SELECT role FROM user_roles WHERE user_id = auth.uid() OR email = auth.jwt()->>'email' LIMIT 1;
-$$ LANGUAGE sql STABLE SECURITY DEFINER;
+-- Helper: Get current user role from user_roles table safely
+CREATE OR REPLACE FUNCTION public.get_user_role()
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT COALESCE(
+    (
+      SELECT role
+      FROM public.user_roles
+      WHERE user_id = auth.uid()
+         OR lower(email) = lower(auth.jwt()->>'email')
+      LIMIT 1
+    ),
+    'user'
+  );
+$$;
 
 -- staff_profiles policies
 CREATE POLICY "profiles_select" ON staff_profiles FOR SELECT TO authenticated
@@ -228,10 +242,16 @@ CREATE POLICY "workflow_modify" ON daily_workflow_reports FOR ALL TO authenticat
 
 -- user_roles policies
 CREATE POLICY "roles_select" ON user_roles FOR SELECT TO authenticated
-  USING (get_user_role() IN ('super_admin', 'admin'));
+  USING (email = auth.jwt()->>'email' OR get_user_role() IN ('super_admin', 'admin'));
 
 CREATE POLICY "roles_modify" ON user_roles FOR ALL TO authenticated
   USING (get_user_role() = 'super_admin' OR (get_user_role() = 'admin' AND role != 'super_admin'));
+
+-- Seed first super admin
+INSERT INTO user_roles (email, role, assigned_by)
+VALUES ('adegbesanadebola1@gmail.com', 'super_admin', 'system')
+ON CONFLICT (email)
+DO UPDATE SET role = 'super_admin', updated_at = NOW();
 
 -- audit_logs policies
 CREATE POLICY "audit_select" ON audit_logs FOR SELECT TO authenticated

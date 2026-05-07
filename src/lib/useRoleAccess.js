@@ -23,49 +23,59 @@ export const ROLE_PERMISSIONS = {
     canEditSalary: false, canViewDocuments: true, canEditDocuments: true,
     canViewWorkflow: true, canEditWorkflow: false, canReviewReports: false,
     canViewAuditLogs: false, canExport: true, canDeleteRecords: false,
-    canEditSettings: false,
+    canManageRoles: false, canEditSettings: false,
   },
   finance_admin: {
     canViewAllStaff: true, canEditStaff: false, canViewSalary: true,
     canEditSalary: true, canViewDocuments: false, canEditDocuments: false,
     canViewWorkflow: false, canEditWorkflow: false, canReviewReports: false,
     canViewAuditLogs: false, canExport: true, canDeleteRecords: false,
-    canEditSettings: false,
+    canManageRoles: false, canEditSettings: false,
   },
   manager: {
     canViewAllStaff: true, canEditStaff: false, canViewSalary: false,
     canEditSalary: false, canViewDocuments: false, canEditDocuments: false,
     canViewWorkflow: true, canEditWorkflow: true, canReviewReports: true,
     canViewAuditLogs: false, canExport: true, canDeleteRecords: false,
-    canEditSettings: false,
+    canManageRoles: false, canEditSettings: false,
   },
   user: {
     canViewAllStaff: false, canEditStaff: false, canViewSalary: false,
     canEditSalary: false, canViewDocuments: false, canEditDocuments: false,
     canViewWorkflow: true, canEditWorkflow: true, canReviewReports: false,
     canViewAuditLogs: false, canExport: false, canDeleteRecords: false,
-    canEditSettings: false,
+    canManageRoles: false, canEditSettings: false,
   },
 };
 
 export default function useRoleAccess() {
   const { user } = useAuth();
   
-  // Fetch role from user_roles table
-  const { data: dbRoleData, isLoading: loadingRole } = useQuery({
+  // Fetch role from user_roles table with better caching
+  const { data: dbRoleData, isLoading: loadingRole, error: roleError } = useQuery({
     queryKey: ['user-role', user?.email],
     queryFn: async () => {
       if (!user?.email) return null;
-      const roles = await entities.UserRole.filter({ email: user.email });
-      return roles[0] || null;
+      try {
+        const roles = await entities.UserRole.filter({ email: user.email });
+        return roles[0] || null;
+      } catch (err) {
+        // RLS denied or network error - log in dev, silently fallback in prod
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('[useRoleAccess] Failed to fetch role from database:', err.message);
+        }
+        return null; // Will fallback to VITE_SUPER_ADMIN_EMAIL or user metadata
+      }
     },
     enabled: !!user?.email,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    retry: 1,
   });
 
   const getRole = () => {
     if (!user) return 'guest';
     
-    // 1. Super Admin Override
+    // 1. Super Admin Override (from env var)
     if (user.email === import.meta.env.VITE_SUPER_ADMIN_EMAIL) return 'super_admin';
     
     // 2. Database Role
@@ -86,9 +96,9 @@ export default function useRoleAccess() {
     role,
     permissions,
     isLoading: loadingRole,
-    isAdmin: ['admin', 'super_admin'].includes(role),
-    isSuperAdmin: role === 'super_admin',
-    hasPermission: (perm) => !!permissions[perm],
+    isAdmin: ['admin', 'super_admin'].includes(role), // BOOLEAN, not function
+    isSuperAdmin: role === 'super_admin', // BOOLEAN, not function
+    hasPermission: (perm) => !!permissions[perm], // Function for custom permissions
     canManageRoles: !!permissions.canManageRoles,
     canEditSettings: !!permissions.canEditSettings
   };

@@ -1,7 +1,11 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { entities } from '@/lib/supabaseEntities';
-import { Users, CheckCircle2, Clock, AlertTriangle, ShieldAlert, ClipboardList, DollarSign, Shield, UserPlus, FileText } from 'lucide-react';
+import { 
+  Users, CheckCircle2, Clock, AlertTriangle, ShieldAlert, 
+  ClipboardList, DollarSign, Shield, UserPlus, FileText,
+  FileCheck, AlertCircle
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import StatCard from '@/components/ui/StatCard';
@@ -9,39 +13,127 @@ import { DashCard, DashListRow } from './DashboardShared';
 import { format } from 'date-fns';
 
 export default function SuperAdminDashboard() {
-  const { data: staffList = [] } = useQuery({
+  const { data: staffList = [], isLoading: staffLoading, error: staffError } = useQuery({
     queryKey: ['staff-profiles'],
     queryFn: () => entities.StaffProfile.list('-created_at', 500),
+    staleTime: 5 * 60 * 1000,
   });
 
-  const { data: todayReports = [] } = useQuery({
+  const { data: todayReports = [], isLoading: reportsLoading } = useQuery({
     queryKey: ['today-reports', format(new Date(), 'yyyy-MM-dd')],
-    queryFn: () => entities.DailyWorkflowReport.filter({ report_date: format(new Date(), 'yyyy-MM-dd') }),
+    queryFn: () => entities.DailyWorkflowReport.filter({ 
+      report_date: format(new Date(), 'yyyy-MM-dd') 
+    }),
+    staleTime: 2 * 60 * 1000,
+  });
+
+  const { data: userDocuments = [], isLoading: docsLoading } = useQuery({
+    queryKey: ['pending-documents'],
+    queryFn: async () => {
+      const docs = await entities.StaffDocument.list('-created_at', 500);
+      return docs.filter(d => !d.document_status || d.document_status === 'Pending');
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: bankDetails = [] } = useQuery({
+    queryKey: ['bank-details-incomplete'],
+    queryFn: async () => {
+      const details = await entities.StaffBankDetails.list();
+      return details.filter(b => !b.account_number || !b.bank_name);
+    },
+    staleTime: 5 * 60 * 1000,
   });
 
   const activeStaff = staffList.filter(s => s.employment_status === 'Active');
   const onProbation = staffList.filter(s => s.employment_type === 'Probation');
+  const incompleteProfiles = staffList.filter(s => (s.profile_completion_percentage || 0) < 80);
+  const completedToday = todayReports.filter(r => r.status === 'Completed');
+  const blockedTasks = todayReports.filter(r => r.status === 'Blocked');
   const pendingReview = todayReports.filter(r => r.review_status === 'Pending Review');
+  const pendingCVs = staffList.length - userDocuments.filter(d => d.document_type === 'CV').length;
 
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="flex justify-between items-end">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Super Admin Console</h2>
+          <h2 className="text-3xl font-bold tracking-tight">Super Admin Console</h2>
           <p className="text-muted-foreground">Global oversight and system controls.</p>
         </div>
-        <div className="flex gap-2">
-          <Link to="/access-control"><Button variant="outline" size="sm"><Shield className="w-4 h-4 mr-2" /> Roles</Button></Link>
-          <Link to="/audit-logs"><Button variant="outline" size="sm"><FileText className="w-4 h-4 mr-2" /> Audits</Button></Link>
-          <Link to="/staff/new"><Button size="sm"><UserPlus className="w-4 h-4 mr-2" /> Add Staff</Button></Link>
+        <div className="flex gap-2 flex-wrap">
+          <Link to="/access-control">
+            <Button variant="outline" size="sm">
+              <Shield className="w-4 h-4 mr-2" /> Roles
+            </Button>
+          </Link>
+          <Link to="/audit-logs">
+            <Button variant="outline" size="sm">
+              <FileText className="w-4 h-4 mr-2" /> Audits
+            </Button>
+          </Link>
+          <Link to="/staff/new">
+            <Button size="sm">
+              <UserPlus className="w-4 h-4 mr-2" /> Add Staff
+            </Button>
+          </Link>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Total Staff" value={staffList.length} icon={Users} />
-        <StatCard title="Active Staff" value={activeStaff.length} icon={CheckCircle2} />
-        <StatCard title="On Probation" value={onProbation.length} icon={Clock} />
-        <StatCard title="Pending Review" value={pendingReview.length} icon={AlertTriangle} />
+      {/* Top-level metrics grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard 
+          title="Total Staff" 
+          value={staffList.length} 
+          icon={Users}
+          loading={staffLoading}
+          error={staffError}
+        />
+        <StatCard 
+          title="Active Today" 
+          value={activeStaff.length} 
+          icon={CheckCircle2}
+          loading={staffLoading}
+        />
+        <StatCard 
+          title="Reports Today" 
+          value={todayReports.length} 
+          icon={ClipboardList}
+          loading={reportsLoading}
+        />
+        <StatCard 
+          title="Completed Today" 
+          value={completedToday.length} 
+          icon={FileCheck}
+          loading={reportsLoading}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard 
+          title="Blocked Tasks" 
+          value={blockedTasks.length} 
+          icon={AlertTriangle}
+          loading={reportsLoading}
+          description={blockedTasks.length > 0 ? 'Needs attention' : 'All clear'}
+        />
+        <StatCard 
+          title="Pending CVs" 
+          value={pendingCVs} 
+          icon={FileText}
+          loading={docsLoading}
+        />
+        <StatCard 
+          title="Pending Reviews" 
+          value={pendingReview.length} 
+          icon={AlertCircle}
+          loading={reportsLoading}
+        />
+        <StatCard 
+          title="Incomplete Profiles" 
+          value={incompleteProfiles.length} 
+          icon={Clock}
+          loading={staffLoading}
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -54,11 +146,13 @@ export default function SuperAdminDashboard() {
         <DashCard title="Workflow Health" icon={ClipboardList} to="/workflow">
           <DashListRow name="Reports Today" right={todayReports.length} />
           <DashListRow name="Needs Review" right={pendingReview.length} />
+          <DashListRow name="Blocked" right={blockedTasks.length} />
         </DashCard>
 
         <DashCard title="Finance Summary" icon={DollarSign} to="/salary">
-          <DashListRow name="Missing Bank Details" right={staffList.length - activeStaff.length} />
-          <DashListRow name="Salary Reminders" right="Active" />
+          <DashListRow name="Missing Bank Details" right={bankDetails.length} />
+          <DashListRow name="Pending CVs" right={pendingCVs} />
+          <DashListRow name="On Probation" right={onProbation.length} />
         </DashCard>
       </div>
     </div>
