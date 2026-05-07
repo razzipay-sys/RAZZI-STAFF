@@ -118,7 +118,7 @@ export default function Settings() {
       ];
       
       await Promise.all(promises);
-      await logAction({ actionType: 'UPDATE', entityType: 'AppSettings', notes: 'Global app settings updated' });
+      await logAction({ actionType: 'SETTINGS_UPDATE', entityType: 'AppSettings', notes: 'Global app settings updated' });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['app-settings'] });
@@ -143,7 +143,7 @@ export default function Settings() {
       const { data: { publicUrl } } = supabase.storage.from('staff-avatars').getPublicUrl(fileName);
       
       await entities.StaffProfile.update(staffProfile.id, { profile_photo_url: publicUrl });
-      await logAction({ actionType: 'UPDATE', entityType: 'StaffProfile', entityId: staffProfile.id, notes: 'Avatar updated' });
+      await logAction({ actionType: 'AVATAR_UPDATE', entityType: 'StaffProfile', entityId: staffProfile.id, notes: 'Avatar updated' });
       
       queryClient.invalidateQueries({ queryKey: ['my-profile'] });
       toast.success('Profile photo updated');

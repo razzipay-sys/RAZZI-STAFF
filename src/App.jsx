@@ -25,6 +25,7 @@ import AuditLogs from './pages/AuditLogs';
 import AccessControl from './pages/AccessControl';
 import Recommendations from './pages/Recommendations';
 import Settings from './pages/Settings';
+import PermissionGuard from './components/auth/PermissionGuard';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isAuthenticated } = useAuth();
@@ -49,15 +50,15 @@ const AuthenticatedApp = () => {
       <Route element={isAuthenticated ? <MainLayout /> : <Navigate to="/login" replace />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/staff" element={<StaffDirectory />} />
-        <Route path="/staff/new" element={<StaffForm />} />
-        <Route path="/staff/:id" element={<StaffProfile />} />
-        <Route path="/documents" element={<Documents />} />
-        <Route path="/salary" element={<SalaryManagement />} />
-        <Route path="/workflow" element={<WorkflowReports />} />
-        <Route path="/calendar" element={<HRCalendar />} />
-          <Route path="/analytics" element={<Analytics />} />
-          <Route path="/audit-logs" element={<AuditLogs />} />
-          <Route path="/access-control" element={<AccessControl />} />
+          <Route path="/staff/new" element={<PermissionGuard permission="canEditStaff"><StaffForm /></PermissionGuard>} />
+          <Route path="/staff/:id" element={<StaffProfile />} />
+          <Route path="/documents" element={<PermissionGuard permission="canViewDocuments"><Documents /></PermissionGuard>} />
+          <Route path="/salary" element={<PermissionGuard permission="canViewSalary"><SalaryManagement /></PermissionGuard>} />
+          <Route path="/workflow" element={<WorkflowReports />} />
+          <Route path="/calendar" element={<HRCalendar />} />
+          <Route path="/analytics" element={<PermissionGuard adminOnly><Analytics /></PermissionGuard>} />
+          <Route path="/audit-logs" element={<PermissionGuard permission="canViewAuditLogs"><AuditLogs /></PermissionGuard>} />
+          <Route path="/access-control" element={<PermissionGuard permission="canManageRoles"><AccessControl /></PermissionGuard>} />
           <Route path="/recommendations" element={<Recommendations />} />
         <Route path="/settings" element={<Settings />} />
       </Route>

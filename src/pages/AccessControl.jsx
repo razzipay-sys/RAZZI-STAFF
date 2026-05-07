@@ -47,27 +47,29 @@ export default function AccessControl() {
   const updateRoleMutation = useMutation({
     mutationFn: async ({ userId, email, newRole }) => {
       // Find if user already has a role
-      const existing = userRoles.find(r => r.user_id === userId);
+      const existing = userRoles.find(r => r.email === email);
       
       if (existing) {
         await entities.UserRole.update(existing.id, { 
           role: newRole,
+          user_id: userId, // Ensure user_id is updated if missing
           updated_at: new Date().toISOString()
         });
       } else {
         await entities.UserRole.create({
           user_id: userId,
           email: email,
-          role: newRole
+          role: newRole,
+          assigned_by: currentUserRole
         });
       }
 
       await logAction({
-        actionType: 'UPDATE',
+        actionType: 'ROLE_CHANGE',
         entityType: 'UserRole',
         entityId: userId,
         entityName: email,
-        notes: `Role changed to ${newRole}`
+        notes: `Role changed from ${existing?.role || 'user'} to ${newRole}`
       });
     },
     onSuccess: () => {

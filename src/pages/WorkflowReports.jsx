@@ -60,7 +60,7 @@ export default function WorkflowReports() {
       const staffMatch = staffList.find(s => s.email === user?.email);
       const reportData = {
         ...data,
-        staff_id: staffMatch?.id || '',
+        staff_id: staffMatch?.staff_id || '',
         staff_name: data.staff_name || staffMatch?.full_name || user?.full_name || '',
         department: data.department || staffMatch?.department || '',
       };

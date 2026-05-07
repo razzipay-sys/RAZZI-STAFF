@@ -1,16 +1,15 @@
 -- ============================================================
--- RazziStaff — Supabase Schema
--- Run this entire file in the Supabase SQL Editor
+-- RazziStaff — Supabase Schema (Upgraded)
 -- ============================================================
 
--- Enable UUID extension (already on by default in Supabase)
+-- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ─── staff_profiles ────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS staff_profiles (
   id                          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id                     TEXT,
-  staff_id                    TEXT UNIQUE,
+  user_id                     TEXT, -- References auth.users(id) as text
+  staff_id                    TEXT UNIQUE, -- custom company ID (e.g. RP-0001)
   full_name                   TEXT NOT NULL,
   email                       TEXT NOT NULL UNIQUE,
   phone                       TEXT,
@@ -33,7 +32,7 @@ CREATE TABLE IF NOT EXISTS staff_profiles (
   probation_start_date        DATE,
   probation_end_date          DATE,
   employment_status           TEXT NOT NULL DEFAULT 'Active' CHECK (employment_status IN ('Active','Suspended','Resigned','Terminated','On Leave')),
-  manager_id                  TEXT,
+  manager_id                  TEXT, -- references another staff_profiles(staff_id)
   manager_name                TEXT,
   staff_bio                   TEXT,
   skills                      TEXT[],
@@ -67,7 +66,7 @@ CREATE TABLE IF NOT EXISTS staff_bank_details (
 -- ─── staff_documents ───────────────────────────────────────
 CREATE TABLE IF NOT EXISTS staff_documents (
   id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  staff_id       TEXT NOT NULL,
+  staff_id       TEXT NOT NULL REFERENCES staff_profiles(staff_id) ON DELETE CASCADE,
   staff_name     TEXT,
   document_type  TEXT CHECK (document_type IN ('CV','ID Card','Offer Letter','Appointment Letter','Confirmation Letter','NDA','Contract','Certificate','Other')),
   document_name  TEXT,
@@ -83,7 +82,7 @@ CREATE TABLE IF NOT EXISTS staff_documents (
 -- ─── daily_workflow_reports ────────────────────────────────
 CREATE TABLE IF NOT EXISTS daily_workflow_reports (
   id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  staff_id            TEXT NOT NULL,
+  staff_id            TEXT NOT NULL REFERENCES staff_profiles(staff_id) ON DELETE CASCADE,
   staff_name          TEXT NOT NULL,
   department          TEXT,
   report_date         DATE NOT NULL,
@@ -113,7 +112,7 @@ CREATE TABLE IF NOT EXISTS daily_workflow_reports (
 -- ─── audit_logs ────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS audit_logs (
   id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  action_type       TEXT NOT NULL CHECK (action_type IN ('CREATE','UPDATE','DELETE','VIEW','EXPORT','LOGIN','LOGOUT')),
+  action_type       TEXT NOT NULL CHECK (action_type IN ('CREATE','UPDATE','DELETE','VIEW','EXPORT','LOGIN','LOGOUT','ROLE_CHANGE','SETTINGS_UPDATE','AVATAR_UPDATE')),
   entity_type       TEXT NOT NULL,
   entity_id         TEXT,
   entity_name       TEXT,
@@ -126,8 +125,34 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   created_at        TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ─── user_roles ───────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS user_roles (
+  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id           UUID UNIQUE, -- references auth.users(id)
+  email             TEXT NOT NULL UNIQUE,
+  role              TEXT NOT NULL DEFAULT 'user'
+    CHECK (role IN ('super_admin','admin','hr_admin','finance_admin','manager','user')),
+  assigned_by       TEXT,
+  assigned_at       TIMESTAMPTZ DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_roles_email ON user_roles(email);
+CREATE INDEX IF NOT EXISTS idx_user_roles_role ON user_roles(role);
+
+-- ─── app_settings ──────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS app_settings (
+  id                         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  setting_key                TEXT UNIQUE NOT NULL,
+  setting_value              JSONB NOT NULL,
+  description                TEXT,
+  updated_by                 UUID,
+  updated_at                 TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ─── Indexes ───────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_staff_profiles_email ON staff_profiles(email);
+CREATE INDEX IF NOT EXISTS idx_staff_profiles_staff_id ON staff_profiles(staff_id);
 CREATE INDEX IF NOT EXISTS idx_staff_profiles_department ON staff_profiles(department);
 CREATE INDEX IF NOT EXISTS idx_staff_profiles_status ON staff_profiles(employment_status);
 CREATE INDEX IF NOT EXISTS idx_workflow_reports_staff_date ON daily_workflow_reports(staff_id, report_date);
@@ -144,7 +169,7 @@ $$ LANGUAGE plpgsql;
 DO $$
 DECLARE t TEXT;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['staff_profiles','staff_bank_details','staff_documents','daily_workflow_reports'] LOOP
+  FOREACH t IN ARRAY ARRAY['staff_profiles','staff_bank_details','staff_documents','daily_workflow_reports','user_roles','app_settings'] LOOP
     EXECUTE format('
       CREATE OR REPLACE TRIGGER trg_%s_updated_at
       BEFORE UPDATE ON %s
@@ -154,34 +179,7 @@ BEGIN
 END;
 $$;
 
--- ─── user_roles ───────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS user_roles (
-  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id           UUID NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
-  email             TEXT NOT NULL UNIQUE,
-  role              TEXT NOT NULL DEFAULT 'user',
-  assigned_by       UUID REFERENCES auth.users(id),
-  assigned_at       TIMESTAMPTZ DEFAULT NOW(),
-  updated_at        TIMESTAMPTZ DEFAULT NOW()
-);
-
--- ─── app_settings ──────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS app_settings (
-  id                         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  setting_key                TEXT UNIQUE NOT NULL,
-  setting_value              JSONB NOT NULL,
-  description                TEXT,
-  updated_by                 UUID REFERENCES auth.users(id),
-  updated_at                 TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Seed default settings
-INSERT INTO app_settings (setting_key, setting_value, description) VALUES
-('work_schedule', '{"start_time": "09:00", "end_time": "17:00", "late_threshold_minutes": 15}', 'Standard company work schedule'),
-('reminders', '{"salary_reminder_days": 5, "birthday_reminder_days": 30, "confirmation_reminder_days": 60}', 'HR and Finance reminder thresholds')
-ON CONFLICT (setting_key) DO NOTHING;
 -- ─── Row Level Security (RLS) ──────────────────────────────
--- Enable RLS on all tables
 ALTER TABLE staff_profiles        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE staff_bank_details    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE staff_documents       ENABLE ROW LEVEL SECURITY;
@@ -190,41 +188,61 @@ ALTER TABLE audit_logs            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_roles            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app_settings          ENABLE ROW LEVEL SECURITY;
 
--- Helper function to check if user is admin
-CREATE OR REPLACE FUNCTION is_admin() 
-RETURNS BOOLEAN AS $$
-BEGIN
-  RETURN EXISTS (
-    SELECT 1 FROM user_roles 
-    WHERE user_id = auth.uid() 
-    AND role IN ('admin', 'super_admin')
-  );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- Helper: Get current user role from user_roles table
+CREATE OR REPLACE FUNCTION get_user_role()
+RETURNS TEXT AS $$
+  SELECT role FROM user_roles WHERE user_id = auth.uid() OR email = auth.jwt()->>'email' LIMIT 1;
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
 
--- Staff Profiles Policies
-CREATE POLICY "Profiles are viewable by everyone authenticated"
-  ON staff_profiles FOR SELECT TO authenticated USING (true);
+-- staff_profiles policies
+CREATE POLICY "profiles_select" ON staff_profiles FOR SELECT TO authenticated
+  USING (true); -- Everyone can see basic profile info
 
-CREATE POLICY "Profiles can be created by admins"
-  ON staff_profiles FOR INSERT TO authenticated WITH CHECK (is_admin());
+CREATE POLICY "profiles_insert" ON staff_profiles FOR INSERT TO authenticated
+  WITH CHECK (get_user_role() IN ('super_admin', 'admin', 'hr_admin'));
 
-CREATE POLICY "Profiles can be updated by admins or owners"
-  ON staff_profiles FOR UPDATE TO authenticated 
-  USING (is_admin() OR auth.uid()::text = user_id)
-  WITH CHECK (is_admin() OR auth.uid()::text = user_id);
+CREATE POLICY "profiles_update" ON staff_profiles FOR UPDATE TO authenticated
+  USING (get_user_role() IN ('super_admin', 'admin', 'hr_admin') OR auth.uid()::text = user_id)
+  WITH CHECK (get_user_role() IN ('super_admin', 'admin', 'hr_admin') OR auth.uid()::text = user_id);
 
--- user_roles Policies
-CREATE POLICY "Roles are viewable by admins"
-  ON user_roles FOR SELECT TO authenticated USING (is_admin());
+-- staff_bank_details policies
+CREATE POLICY "bank_select" ON staff_bank_details FOR SELECT TO authenticated
+  USING (get_user_role() IN ('super_admin', 'finance_admin') OR staff_id = (SELECT staff_id FROM staff_profiles WHERE user_id = auth.uid()::text));
 
-CREATE POLICY "Roles can be managed by super_admins"
-  ON user_roles FOR ALL TO authenticated 
-  USING (EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role = 'super_admin'))
-  WITH CHECK (EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role = 'super_admin'));
+CREATE POLICY "bank_modify" ON staff_bank_details FOR ALL TO authenticated
+  USING (get_user_role() IN ('super_admin', 'finance_admin'));
 
--- ─── Storage bucket for staff documents ───────────────────
--- Run this separately in Supabase dashboard > Storage > New bucket
--- Or uncomment if using service role key:
--- INSERT INTO storage.buckets (id, name, public) VALUES ('staff-documents', 'staff-documents', true)
--- ON CONFLICT DO NOTHING;
+-- staff_documents policies
+CREATE POLICY "docs_select" ON staff_documents FOR SELECT TO authenticated
+  USING (get_user_role() IN ('super_admin', 'admin', 'hr_admin') OR staff_id = (SELECT staff_id FROM staff_profiles WHERE user_id = auth.uid()::text));
+
+CREATE POLICY "docs_modify" ON staff_documents FOR ALL TO authenticated
+  USING (get_user_role() IN ('super_admin', 'admin', 'hr_admin') OR staff_id = (SELECT staff_id FROM staff_profiles WHERE user_id = auth.uid()::text));
+
+-- daily_workflow_reports policies
+CREATE POLICY "workflow_select" ON daily_workflow_reports FOR SELECT TO authenticated
+  USING (get_user_role() IN ('super_admin', 'admin', 'manager') OR staff_id = (SELECT staff_id FROM staff_profiles WHERE user_id = auth.uid()::text));
+
+CREATE POLICY "workflow_modify" ON daily_workflow_reports FOR ALL TO authenticated
+  USING (staff_id = (SELECT staff_id FROM staff_profiles WHERE user_id = auth.uid()::text) OR get_user_role() IN ('super_admin', 'admin', 'manager'));
+
+-- user_roles policies
+CREATE POLICY "roles_select" ON user_roles FOR SELECT TO authenticated
+  USING (get_user_role() IN ('super_admin', 'admin'));
+
+CREATE POLICY "roles_modify" ON user_roles FOR ALL TO authenticated
+  USING (get_user_role() = 'super_admin' OR (get_user_role() = 'admin' AND role != 'super_admin'));
+
+-- audit_logs policies
+CREATE POLICY "audit_select" ON audit_logs FOR SELECT TO authenticated
+  USING (get_user_role() IN ('super_admin', 'admin'));
+
+CREATE POLICY "audit_insert" ON audit_logs FOR INSERT TO authenticated
+  WITH CHECK (true);
+
+-- app_settings policies
+CREATE POLICY "settings_select" ON app_settings FOR SELECT TO authenticated
+  USING (true);
+
+CREATE POLICY "settings_modify" ON app_settings FOR ALL TO authenticated
+  USING (get_user_role() IN ('super_admin', 'admin'));

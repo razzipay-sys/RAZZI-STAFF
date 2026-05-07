@@ -79,7 +79,10 @@ export default function AuditLogs() {
     'UPDATE': 'bg-blue-500/10 text-blue-500 border-blue-500/20',
     'DELETE': 'bg-red-500/10 text-red-500 border-red-500/20',
     'VIEW': 'bg-slate-500/10 text-slate-500 border-slate-500/20',
-    'EXPORT': 'bg-purple-500/10 text-purple-500 border-purple-500/20',
+    'EXPORT': 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+    'ROLE_CHANGE': 'bg-purple-500/10 text-purple-500 border-purple-500/20',
+    'SETTINGS_UPDATE': 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20',
+    'AVATAR_UPDATE': 'bg-pink-500/10 text-pink-500 border-pink-500/20',
   };
 
   return (
@@ -93,8 +96,8 @@ export default function AuditLogs() {
           <Select value={actionFilter} onValueChange={setActionFilter}>
             <SelectTrigger className="w-[140px]"><SelectValue placeholder="Action" /></SelectTrigger>
             <SelectContent>
-              {['All', 'CREATE', 'UPDATE', 'DELETE', 'VIEW', 'EXPORT'].map(a => (
-                <SelectItem key={a} value={a}>{a}</SelectItem>
+              {['All', 'CREATE', 'UPDATE', 'DELETE', 'VIEW', 'EXPORT', 'ROLE_CHANGE', 'SETTINGS_UPDATE', 'AVATAR_UPDATE'].map(a => (
+                <SelectItem key={a} value={a}>{a.replace('_', ' ')}</SelectItem>
               ))}
             </SelectContent>
           </Select>

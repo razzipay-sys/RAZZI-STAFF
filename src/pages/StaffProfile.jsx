@@ -33,40 +33,45 @@ export default function StaffProfile() {
   const [docDialogOpen, setDocDialogOpen] = useState(false);
   const [newDoc, setNewDoc] = useState({ document_type: 'CV', document_name: '', status: 'Pending' });
 
-  const { data: staffArr = [], isLoading } = useQuery({
+  const { data: staff, isLoading } = useQuery({
     queryKey: ['staff-profile', id],
-    queryFn: () => entities.StaffProfile.filter({ id }),
+    queryFn: async () => {
+      const s = await entities.StaffProfile.filter({ id });
+      return s[0] || null;
+    },
   });
 
   const { data: documents = [] } = useQuery({
-    queryKey: ['staff-documents', id],
-    queryFn: () => entities.StaffDocument.filter({ staff_id: id }),
+    queryKey: ['staff-documents', staff?.staff_id],
+    queryFn: () => entities.StaffDocument.filter({ staff_id: staff.staff_id }),
+    enabled: !!staff?.staff_id,
   });
 
   const { data: bankDetails = [] } = useQuery({
-    queryKey: ['staff-bank', id],
-    queryFn: () => entities.StaffBankDetails.filter({ staff_id: id }),
-    enabled: hasPermission('canViewSalary'),
+    queryKey: ['staff-bank', staff?.staff_id],
+    queryFn: () => entities.StaffBankDetails.filter({ staff_id: staff.staff_id }),
+    enabled: hasPermission('canViewSalary') && !!staff?.staff_id,
   });
 
   const { data: reports = [] } = useQuery({
-    queryKey: ['staff-reports', id],
-    queryFn: () => entities.DailyWorkflowReport.filter({ staff_id: id }, '-report_date', 20),
+    queryKey: ['staff-reports', staff?.staff_id],
+    queryFn: () => entities.DailyWorkflowReport.filter({ staff_id: staff.staff_id }, '-report_date', 20),
+    enabled: !!staff?.staff_id,
   });
 
   const uploadDoc = useMutation({
     mutationFn: async (file) => {
       // Upload to Supabase Storage
       const fileExt = file.name.split('.').pop();
-      const fileName = `${staffProfile.id}/${Date.now()}.${fileExt}`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
+      const fileName = `${staff.staff_id}/${Date.now()}.${fileExt}`;
+      const { error: uploadError } = await supabase.storage
         .from('staff-documents')
         .upload(fileName, file, { upsert: true });
       if (uploadError) throw uploadError;
       const { data: { publicUrl } } = supabase.storage.from('staff-documents').getPublicUrl(fileName);
       const file_url = publicUrl;
       await entities.StaffDocument.create({
-        staff_id: id,
+        staff_id: staff.staff_id,
         staff_name: staff.full_name,
         document_type: newDoc.document_type,
         document_name: newDoc.document_name || file.name,
@@ -75,12 +80,12 @@ export default function StaffProfile() {
       });
       await logAction({
         actionType: 'CREATE', entityType: 'StaffDocument',
-        entityId: id, entityName: staff.full_name,
+        entityId: staff.staff_id, entityName: staff.full_name,
         notes: `Document uploaded: ${newDoc.document_type}`
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['staff-documents', id] });
+      queryClient.invalidateQueries({ queryKey: ['staff-documents', staff.staff_id] });
       toast.success('Document uploaded');
       setDocDialogOpen(false);
       setNewDoc({ document_type: 'CV', document_name: '', status: 'Pending' });
@@ -97,7 +102,7 @@ export default function StaffProfile() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['staff-documents', id] });
+      queryClient.invalidateQueries({ queryKey: ['staff-documents', staff.staff_id] });
       toast.success('Status updated');
     }
   });
@@ -137,7 +142,6 @@ export default function StaffProfile() {
   };
 
   if (isLoading) return <PageLoader />;
-  const staff = staffArr[0];
   if (!staff) return <EmptyState title="Staff not found" description="This profile does not exist." action={() => navigate('/staff')} actionLabel="Back to Directory" />;
 
   const getInitials = (name) => name ? name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '??';

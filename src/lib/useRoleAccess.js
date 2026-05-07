@@ -52,14 +52,14 @@ export default function useRoleAccess() {
   const { user } = useAuth();
   
   // Fetch role from user_roles table
-  const { data: dbRoleData, isLoading } = useQuery({
-    queryKey: ['user-role', user?.id],
+  const { data: dbRoleData, isLoading: loadingRole } = useQuery({
+    queryKey: ['user-role', user?.email],
     queryFn: async () => {
-      if (!user?.id) return null;
-      const roles = await entities.UserRole.filter({ user_id: user.id });
+      if (!user?.email) return null;
+      const roles = await entities.UserRole.filter({ email: user.email });
       return roles[0] || null;
     },
-    enabled: !!user?.id,
+    enabled: !!user?.email,
   });
 
   const getRole = () => {
@@ -72,7 +72,10 @@ export default function useRoleAccess() {
     if (dbRoleData?.role) return dbRoleData.role;
     
     // 3. Metadata Fallback
-    return user.user_metadata?.role || 'user';
+    if (user.user_metadata?.role) return user.user_metadata.role;
+    
+    // 4. Default
+    return 'user';
   };
 
   const role = getRole();
@@ -82,7 +85,7 @@ export default function useRoleAccess() {
     user,
     role,
     permissions,
-    isLoading,
+    isLoading: loadingRole,
     isAdmin: ['admin', 'super_admin'].includes(role),
     isSuperAdmin: role === 'super_admin',
     hasPermission: (perm) => !!permissions[perm],

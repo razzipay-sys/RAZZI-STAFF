@@ -45,12 +45,30 @@ export default function SalaryManagement() {
 
   const saveMutation = useMutation({
     mutationFn: async (data) => {
+      const staffMatch = staffList.find(s => s.staff_id === data.staff_id);
+      const finalData = {
+        ...data,
+        staff_name: staffMatch?.full_name || data.staff_name
+      };
+
       if (editId) {
-        await entities.StaffBankDetails.update(editId, data);
-        await logAction({ actionType: 'UPDATE', entityType: 'StaffBankDetails', entityId: editId, entityName: data.staff_name, notes: 'Bank details updated' });
+        await entities.StaffBankDetails.update(editId, finalData);
+        await logAction({
+          actionType: 'UPDATE',
+          entityType: 'StaffBankDetails',
+          entityId: editId,
+          entityName: finalData.staff_name,
+          notes: 'Bank details updated'
+        });
       } else {
-        await entities.StaffBankDetails.create(data);
-        await logAction({ actionType: 'CREATE', entityType: 'StaffBankDetails', entityName: data.staff_name, notes: 'Bank details created' });
+        const result = await entities.StaffBankDetails.create(finalData);
+        await logAction({
+          actionType: 'CREATE',
+          entityType: 'StaffBankDetails',
+          entityId: result?.id,
+          entityName: finalData.staff_name,
+          notes: 'Bank details created'
+        });
       }
     },
     onSuccess: () => {
@@ -197,12 +215,12 @@ export default function SalaryManagement() {
             <div className="space-y-2">
               <Label>Staff Member</Label>
               <Select value={form.staff_id} onValueChange={v => {
-                const match = staffList.find(s => s.id === v);
+                const match = staffList.find(s => s.staff_id === v);
                 updateField('staff_id', v);
                 updateField('staff_name', match?.full_name || '');
               }}>
                 <SelectTrigger><SelectValue placeholder="Select staff" /></SelectTrigger>
-                <SelectContent>{staffList.map(s => <SelectItem key={s.id} value={s.id}>{s.full_name}</SelectItem>)}</SelectContent>
+                <SelectContent>{staffList.map(s => <SelectItem key={s.staff_id} value={s.staff_id}>{s.full_name} ({s.staff_id})</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="grid grid-cols-2 gap-4">

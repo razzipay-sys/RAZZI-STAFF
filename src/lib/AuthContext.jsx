@@ -70,17 +70,11 @@ export const AuthProvider = ({ children }) => {
 
   const navigateToLogin = () => { window.location.href = '/login'; };
 
-  const getUserRole = () => {
-    const SUPER_ADMIN_EMAILS = [import.meta.env.VITE_SUPER_ADMIN_EMAIL || 'adegbesanadebola1@gmail.com'];
-    if (SUPER_ADMIN_EMAILS.includes(user?.email)) return 'super_admin';
-    return user?.user_metadata?.role || user?.app_metadata?.role || 'user';
-  };
-
   return (
     <AuthContext.Provider value={{
       user, session, isAuthenticated, isLoadingAuth, isLoadingPublicSettings,
       authError, authChecked: !isLoadingAuth, appPublicSettings: null,
-      signIn, signUp, signInWithGoogle, resetPassword, logout, navigateToLogin, getUserRole,
+      signIn, signUp, signInWithGoogle, resetPassword, logout, navigateToLogin,
     }}>
       {children}
     </AuthContext.Provider>
