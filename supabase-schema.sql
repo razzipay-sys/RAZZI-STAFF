@@ -134,11 +134,19 @@ CREATE TABLE IF NOT EXISTS user_roles (
     CHECK (role IN ('super_admin','admin','hr_admin','finance_admin','manager','user')),
   assigned_by       TEXT,
   assigned_at       TIMESTAMPTZ DEFAULT NOW(),
+  created_at        TIMESTAMPTZ DEFAULT NOW(),
   updated_at        TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_roles_email ON user_roles(email);
 CREATE INDEX IF NOT EXISTS idx_user_roles_role ON user_roles(role);
+
+ALTER TABLE user_roles
+ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+
+UPDATE user_roles
+SET created_at = COALESCE(created_at, assigned_at, updated_at, NOW())
+WHERE created_at IS NULL;
 
 -- ─── app_settings ──────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS app_settings (
@@ -273,10 +281,12 @@ CREATE POLICY "roles_delete" ON user_roles FOR DELETE TO authenticated
   );
 
 -- Seed first super admin
-INSERT INTO user_roles (email, role, assigned_by)
-VALUES ('adegbesanadebola1@gmail.com', 'super_admin', 'system')
+INSERT INTO user_roles (email, role, assigned_by, created_at, assigned_at, updated_at)
+VALUES ('adegbesanadebola1@gmail.com', 'super_admin', 'system', NOW(), NOW(), NOW())
 ON CONFLICT (email)
-DO UPDATE SET role = 'super_admin', updated_at = NOW();
+DO UPDATE SET
+  role = 'super_admin',
+  updated_at = NOW();
 
 -- audit_logs policies
 CREATE POLICY "audit_select" ON audit_logs FOR SELECT TO authenticated

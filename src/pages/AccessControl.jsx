@@ -28,6 +28,22 @@ const ROLES = [
   { value: 'super_admin', label: 'Super Admin' },
 ];
 
+const isMissingCreatedAt = (error) => error?.message?.includes('user_roles.created_at') || error?.message?.includes('created_at');
+
+async function insertUserRole(record) {
+  const { error } = await supabase.from('user_roles').insert(record);
+  if (!error) return;
+
+  if (isMissingCreatedAt(error)) {
+    const { created_at: _createdAt, ...legacyRecord } = record;
+    const fallback = await supabase.from('user_roles').insert(legacyRecord);
+    if (!fallback.error) return;
+    throw fallback.error;
+  }
+
+  throw error;
+}
+
 export default function AccessControl() {
   const queryClient = useQueryClient();
   const { role: currentUserRole, isSuperAdmin, hasPermission } = useRoleAccess();
@@ -47,7 +63,16 @@ export default function AccessControl() {
 
   const { data: userRoles = [], isLoading: loadingRoles, isError: rolesError, error: rolesErrorData, refetch: refetchRoles } = useQuery({
     queryKey: ['user-roles-list'],
-    queryFn: () => entities.UserRole.list(),
+    queryFn: async () => {
+      try {
+        return await entities.UserRole.list('-created_at', 500);
+      } catch (error) {
+        if (isMissingCreatedAt(error)) {
+          return entities.UserRole.list('-assigned_at', 500);
+        }
+        throw error;
+      }
+    },
     staleTime: 0,
     retry: false,
     refetchOnWindowFocus: false,
@@ -79,22 +104,22 @@ export default function AccessControl() {
             email,
             role: newRole,
             assigned_by: currentUserRole,
+            assigned_at: existing.assigned_at || new Date().toISOString(),
             updated_at: new Date().toISOString(),
           })
           .eq('id', existing.id);
 
         if (error) throw error;
       } else {
-        const { error } = await supabase
-          .from('user_roles')
-          .insert({
-            user_id: staff.user_id || null,
-            email,
-            role: newRole,
-            assigned_by: currentUserRole,
-          });
-
-        if (error) throw error;
+        await insertUserRole({
+          user_id: staff.user_id || null,
+          email,
+          role: newRole,
+          assigned_by: currentUserRole,
+          assigned_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
       }
 
       await logAction({
@@ -130,6 +155,7 @@ export default function AccessControl() {
         email,
         role: manualRole,
         assigned_by: currentUserRole,
+        assigned_at: existing?.assigned_at || new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
 
@@ -137,8 +163,10 @@ export default function AccessControl() {
         const { error } = await supabase.from('user_roles').update(record).eq('id', existing.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('user_roles').insert(record);
-        if (error) throw error;
+        await insertUserRole({
+          ...record,
+          created_at: new Date().toISOString(),
+        });
       }
 
       await logAction({

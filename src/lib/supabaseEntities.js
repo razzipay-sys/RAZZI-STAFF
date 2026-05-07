@@ -17,10 +17,20 @@ const TABLE_MAP = {
   AppSetting: 'app_settings',
 };
 
-function buildEntity(tableName) {
+const DEFAULT_ORDER_MAP = {
+  StaffProfile: '-created_at',
+  StaffBankDetails: '-created_at',
+  StaffDocument: '-created_at',
+  DailyWorkflowReport: '-created_at',
+  AuditLog: '-created_at',
+  UserRole: '-created_at',
+  AppSetting: '-updated_at',
+};
+
+function buildEntity(tableName, defaultOrder = '-created_at') {
   return {
     /** List all records. orderBy: e.g. '-created_at' (- prefix = descending). limit: max rows */
-    async list(orderBy = '-created_at', limit = 500) {
+    async list(orderBy = defaultOrder, limit = 500) {
       const column = orderBy.startsWith('-') ? orderBy.slice(1) : orderBy;
       const ascending = !orderBy.startsWith('-');
       const { data, error } = await supabase
@@ -44,7 +54,7 @@ function buildEntity(tableName) {
     },
 
     /** Filter records by field equality map */
-    async filter(filters = {}, orderBy = '-created_at', limit = 500) {
+    async filter(filters = {}, orderBy = defaultOrder, limit = 500) {
       const column = orderBy.startsWith('-') ? orderBy.slice(1) : orderBy;
       const ascending = !orderBy.startsWith('-');
       let query = supabase
@@ -60,7 +70,7 @@ function buildEntity(tableName) {
       return data;
     },
 
-    async listSafe(orderBy = '-created_at', limit = 500) {
+    async listSafe(orderBy = defaultOrder, limit = 500) {
       try {
         const data = await this.list(orderBy, limit);
         return { data, error: null };
@@ -69,7 +79,7 @@ function buildEntity(tableName) {
       }
     },
 
-    async filterSafe(filters = {}, orderBy = '-created_at', limit = 500) {
+    async filterSafe(filters = {}, orderBy = defaultOrder, limit = 500) {
       try {
         const data = await this.filter(filters, orderBy, limit);
         return { data, error: null };
@@ -132,7 +142,7 @@ function buildEntity(tableName) {
 }
 
 export const entities = Object.fromEntries(
-  Object.entries(TABLE_MAP).map(([key, table]) => [key, buildEntity(table)])
+  Object.entries(TABLE_MAP).map(([key, table]) => [key, buildEntity(table, DEFAULT_ORDER_MAP[key])])
 );
 
 export default entities;
