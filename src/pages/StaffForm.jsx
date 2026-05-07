@@ -117,14 +117,16 @@ export default function StaffForm() {
 
       <form onSubmit={handleSubmit}>
         <Tabs defaultValue="basic" className="space-y-6">
-          <TabsList className="bg-muted p-1 rounded-lg">
-            <TabsTrigger value="basic">Basic Info</TabsTrigger>
-            <TabsTrigger value="employment">Employment</TabsTrigger>
-            <TabsTrigger value="company">Company Profile</TabsTrigger>
-            <TabsTrigger value="emergency">Emergency</TabsTrigger>
-            <TabsTrigger value="dates">Important Dates</TabsTrigger>
-            <TabsTrigger value="notes">Notes</TabsTrigger>
-          </TabsList>
+          <div className="overflow-x-auto pb-2 -mx-2 px-2 md:mx-0 md:px-0">
+            <TabsList className="bg-muted p-1 rounded-lg inline-flex w-max md:w-full">
+              <TabsTrigger value="basic">Basic Info</TabsTrigger>
+              <TabsTrigger value="employment">Employment</TabsTrigger>
+              <TabsTrigger value="company">Company Profile</TabsTrigger>
+              <TabsTrigger value="emergency">Emergency</TabsTrigger>
+              <TabsTrigger value="dates">Dates</TabsTrigger>
+              <TabsTrigger value="notes">Notes</TabsTrigger>
+            </TabsList>
+          </div>
 
           <TabsContent value="basic">
             <Card>

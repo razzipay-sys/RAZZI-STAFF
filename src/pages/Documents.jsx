@@ -91,10 +91,10 @@ export default function Documents() {
               <TableHeader>
                 <TableRow className="bg-muted/50">
                   <TableHead>Staff</TableHead>
-                  <TableHead>Document</TableHead>
+                  <TableHead className="hidden sm:table-cell">Document</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Uploaded</TableHead>
+                  <TableHead className="hidden md:table-cell">Uploaded</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -102,10 +102,10 @@ export default function Documents() {
                 {filtered.map(doc => (
                   <TableRow key={doc.id}>
                     <TableCell className="font-medium text-sm">{doc.staff_name}</TableCell>
-                    <TableCell className="text-sm">{doc.document_name || '-'}</TableCell>
+                    <TableCell className="hidden sm:table-cell text-sm">{doc.document_name || '-'}</TableCell>
                     <TableCell><StatusBadge status={doc.document_type} /></TableCell>
                     <TableCell><StatusBadge status={doc.status} /></TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
+                    <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                       {doc.created_date ? format(parseISO(doc.created_date), 'MMM d, yyyy') : 'N/A'}
                     </TableCell>
                     <TableCell>

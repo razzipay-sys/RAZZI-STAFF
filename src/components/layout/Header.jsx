@@ -33,14 +33,14 @@ export default function Header({ sidebarCollapsed, toggleSidebar, title }) {
   return (
     <header className={cn(
       "fixed top-0 right-0 z-30 h-16 bg-background/80 backdrop-blur-lg border-b border-border transition-all duration-300",
-      sidebarCollapsed ? "left-16" : "left-64"
+      sidebarCollapsed ? "left-0 md:left-16" : "left-0 md:left-64"
     )}>
-      <div className="flex h-full items-center justify-between px-6">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" className="lg:hidden" onClick={toggleSidebar}>
+      <div className="flex h-full items-center justify-between px-4 md:px-6">
+        <div className="flex items-center gap-2 md:gap-4">
+          <Button variant="ghost" size="icon" className="md:hidden" onClick={toggleSidebar}>
             <Menu className="w-5 h-5" />
           </Button>
-          <h1 className="text-lg font-semibold text-foreground">{title}</h1>
+          <h1 className="text-base md:text-lg font-semibold text-foreground truncate max-w-[150px] md:max-w-none">{title}</h1>
         </div>
 
         <div className="flex items-center gap-2">

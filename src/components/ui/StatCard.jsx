@@ -15,11 +15,11 @@ export default function StatCard({
   
   return (
     <Card className={cn("overflow-hidden", className)}>
-      <CardContent className="p-6">
-        <div className="flex items-start justify-between">
-          <div className="space-y-2">
-            <p className="text-sm text-muted-foreground font-medium">{title}</p>
-            <p className="text-3xl font-bold text-foreground">{value}</p>
+      <CardContent className="p-4 md:p-6">
+        <div className="flex items-start justify-between gap-2">
+          <div className="space-y-1 md:space-y-2 min-w-0">
+            <p className="text-xs md:text-sm text-muted-foreground font-medium truncate">{title}</p>
+            <p className="text-xl md:text-3xl font-bold text-foreground">{value}</p>
             {trend !== undefined && (
               <p className={cn(
                 "text-xs font-medium flex items-center gap-1",
@@ -32,10 +32,10 @@ export default function StatCard({
           </div>
           {Icon && (
             <div className={cn(
-              "p-3 rounded-xl bg-primary/10",
+              "p-2 md:p-3 rounded-xl bg-primary/10 shrink-0",
               iconClassName
             )}>
-              <Icon className="w-6 h-6 text-primary" />
+              <Icon className="w-4 h-4 md:w-6 md:h-6 text-primary" />
             </div>
           )}
         </div>

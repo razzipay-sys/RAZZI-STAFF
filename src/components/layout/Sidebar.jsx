@@ -88,7 +88,7 @@ const navItems = [
   },
 ];
 
-export default function Sidebar({ collapsed, setCollapsed }) {
+export default function Sidebar({ collapsed, setCollapsed, className }) {
   const location = useLocation();
   const { hasPermission, user, isAdmin } = useRoleAccess();
 
@@ -104,7 +104,8 @@ export default function Sidebar({ collapsed, setCollapsed }) {
   return (
     <aside className={cn(
       "fixed left-0 top-0 z-40 h-screen bg-sidebar border-r border-sidebar-border transition-all duration-300",
-      collapsed ? "w-16" : "w-64"
+      collapsed ? "w-16" : "w-64",
+      className
     )}>
       <div className="flex h-full flex-col">
         {/* Logo */}

@@ -156,12 +156,14 @@ export default function StaffProfile() {
 
       {/* Tabs */}
       <Tabs defaultValue="overview">
-        <TabsList className="bg-muted p-1">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="documents">Documents</TabsTrigger>
-          {hasPermission('canViewSalary') && <TabsTrigger value="salary">Bank & Salary</TabsTrigger>}
-          <TabsTrigger value="reports">Reports</TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto pb-2 -mx-2 px-2 md:mx-0 md:px-0">
+          <TabsList className="bg-muted p-1 inline-flex w-max md:w-full">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="documents">Documents</TabsTrigger>
+            {hasPermission('canViewSalary') && <TabsTrigger value="salary">Bank & Salary</TabsTrigger>}
+            <TabsTrigger value="reports">Reports</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="overview" className="mt-4 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

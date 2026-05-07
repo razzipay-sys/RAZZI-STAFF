@@ -78,10 +78,10 @@ export default function AuditLogs() {
                 <TableRow className="bg-muted/50">
                   <TableHead>Timestamp</TableHead>
                   <TableHead>Action</TableHead>
-                  <TableHead>Entity</TableHead>
+                  <TableHead className="hidden sm:table-cell">Entity</TableHead>
                   <TableHead>Name</TableHead>
-                  <TableHead>Performed By</TableHead>
-                  <TableHead className="hidden md:table-cell">Notes</TableHead>
+                  <TableHead className="hidden md:table-cell">Performed By</TableHead>
+                  <TableHead className="hidden lg:table-cell">Notes</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -95,10 +95,10 @@ export default function AuditLogs() {
                         {log.action_type}
                       </span>
                     </TableCell>
-                    <TableCell className="text-sm">{log.entity_type}</TableCell>
+                    <TableCell className="hidden sm:table-cell text-sm">{log.entity_type}</TableCell>
                     <TableCell className="text-sm font-medium">{log.entity_name || '-'}</TableCell>
-                    <TableCell className="text-sm">{log.performed_by}</TableCell>
-                    <TableCell className="hidden md:table-cell text-sm text-muted-foreground max-w-[200px] truncate">{log.notes}</TableCell>
+                    <TableCell className="hidden md:table-cell text-sm">{log.performed_by}</TableCell>
+                    <TableCell className="hidden lg:table-cell text-sm text-muted-foreground max-w-[200px] truncate">{log.notes}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

@@ -233,9 +233,9 @@ export default function WorkflowReports() {
                   <TableHead>Staff</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead className="hidden md:table-cell">Task</TableHead>
-                  <TableHead>Priority</TableHead>
+                  <TableHead className="hidden sm:table-cell">Priority</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Review</TableHead>
+                  <TableHead className="hidden sm:table-cell">Review</TableHead>
                   <TableHead className="hidden lg:table-cell">Hours</TableHead>
                   {(isAdmin() || hasPermission('canReviewReports')) && <TableHead>Actions</TableHead>}
                 </TableRow>
@@ -251,9 +251,9 @@ export default function WorkflowReports() {
                     </TableCell>
                     <TableCell className="text-sm">{r.report_date ? format(parseISO(r.report_date), 'MMM d') : 'N/A'}</TableCell>
                     <TableCell className="hidden md:table-cell text-sm max-w-[200px] truncate">{r.assigned_task || r.work_done}</TableCell>
-                    <TableCell><StatusBadge status={r.priority || 'Medium'} /></TableCell>
+                    <TableCell className="hidden sm:table-cell"><StatusBadge status={r.priority || 'Medium'} /></TableCell>
                     <TableCell><StatusBadge status={r.status || 'In Progress'} /></TableCell>
-                    <TableCell><StatusBadge status={r.review_status || 'Pending Review'} /></TableCell>
+                    <TableCell className="hidden sm:table-cell"><StatusBadge status={r.review_status || 'Pending Review'} /></TableCell>
                     <TableCell className="hidden lg:table-cell text-sm">{r.hours_worked || '-'}</TableCell>
                     {(isAdmin() || hasPermission('canReviewReports')) && (
                       <TableCell>
