@@ -10,6 +10,7 @@ import MainLayout from './components/layout/MainLayout';
 
 // Pages
 import Login from './pages/Login';
+import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import StaffDirectory from './pages/StaffDirectory';
 import StaffForm from './pages/StaffForm';
@@ -41,6 +42,7 @@ const AuthenticatedApp = () => {
   return (
     <Routes>
       <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} />
+      <Route path="/register" element={isAuthenticated ? <Navigate to="/" replace /> : <Register />} />
       <Route element={isAuthenticated ? <MainLayout /> : <Navigate to="/login" replace />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/staff" element={<StaffDirectory />} />

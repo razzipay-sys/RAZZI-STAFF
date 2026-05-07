@@ -158,6 +158,15 @@ export default function Login() {
 
             {mode === 'login' && (
               <>
+                <div className="pt-2 text-center">
+                  <p className="text-sm text-white/40">
+                    Don't have an account?{' '}
+                    <Link to="/register" className="text-[#20b2aa] hover:text-[#20b2aa]/80 transition-colors font-medium">
+                      Register
+                    </Link>
+                  </p>
+                </div>
+
                 <div className="relative">
                   <div className="absolute inset-0 flex items-center">
                     <div className="w-full border-t border-white/10" />
