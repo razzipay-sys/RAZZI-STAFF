@@ -1,13 +1,12 @@
 import React from 'react';
 import { entities } from '@/lib/supabaseEntities';
-import { useAuth } from '@/lib/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   Users, FileText, ClipboardList, AlertTriangle,
   CheckCircle2, Clock, XCircle, ArrowRight, Cake,
-  UserCheck, DollarSign, CalendarDays, TrendingUp,
-  Building2, ShieldAlert
+  UserCheck, DollarSign, CalendarDays,
+  Building2, ShieldAlert, UserPlus, Shield
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,6 +14,7 @@ import StatCard from '@/components/ui/StatCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { PageLoader } from '@/components/ui/LoadingSpinner';
 import { format, isAfter, isBefore, addDays, parseISO } from 'date-fns';
+import useRoleAccess from '@/lib/useRoleAccess';
 
 function DashListRow({ name, sub, right }) {
   return (
@@ -54,25 +54,35 @@ function EmptyNote({ text }) {
 }
 
 export default function Dashboard() {
+  const { role, hasPermission, isAdmin, isSuperAdmin } = useRoleAccess();
+  
+  // Fetch app settings for work schedule
+  const { data: dbSettings = [] } = useQuery({
+    queryKey: ['app-settings'],
+    queryFn: () => entities.AppSetting.list(),
+  });
+
+  const schedule = dbSettings.find(s => s.setting_key === 'work_schedule')?.setting_value || { start_time: '09:00', late_threshold_minutes: 15 };
+
   const { data: staffList = [], isLoading: loadingStaff } = useQuery({
     queryKey: ['staff-profiles'],
-    queryFn: () => entities.StaffProfile.list('-created_date', 500),
+    queryFn: () => entities.StaffProfile.list('-created_at', 500),
   });
 
   const { data: documents = [], isLoading: loadingDocs } = useQuery({
     queryKey: ['staff-documents'],
-    queryFn: () => entities.StaffDocument.list('-created_date', 500),
+    queryFn: () => entities.StaffDocument.list('-created_at', 500),
   });
 
   const { data: bankRecords = [], isLoading: loadingBank } = useQuery({
     queryKey: ['bank-details'],
-    queryFn: () => entities.StaffBankDetails.list('-created_date', 500),
+    queryFn: () => entities.StaffBankDetails.list('-created_at', 500),
   });
 
   const today = format(new Date(), 'yyyy-MM-dd');
   const { data: todayReports = [], isLoading: loadingReports } = useQuery({
     queryKey: ['today-reports', today],
-    queryFn: () => entities.DailyWorkflowReport.filter({ report_date: today }, '-created_date', 500),
+    queryFn: () => entities.DailyWorkflowReport.filter({ report_date: today }, '-created_at', 500),
   });
 
   if (loadingStaff || loadingDocs || loadingBank || loadingReports) return <PageLoader />;
@@ -102,10 +112,17 @@ export default function Dashboard() {
   const completedToday = todayReports.filter(r => r.status === 'Completed');
   const blockedToday = todayReports.filter(r => r.status === 'Blocked');
   const pendingReviewToday = todayReports.filter(r => r.review_status === 'Pending Review');
+  
   const lateClockIns = todayReports.filter(r => {
     if (!r.clock_in_time) return false;
     const [h, m] = r.clock_in_time.split(':').map(Number);
-    return h > 9 || (h === 9 && m > 0);
+    const [startH, startM] = schedule.start_time.split(':').map(Number);
+    const threshold = schedule.late_threshold_minutes || 0;
+    
+    const clockInMinutes = h * 60 + m;
+    const startMinutes = startH * 60 + startM + threshold;
+    
+    return clockInMinutes > startMinutes;
   });
 
   // Upcoming birthdays (next 30 days)
@@ -143,169 +160,154 @@ export default function Dashboard() {
   }).slice(0, 5);
 
   return (
-    <div className="space-y-6 animate-fade-in">
-
-      {/* Row 1: Staff Overview */}
-      <div>
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Staff Overview</p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <StatCard title="Total Staff" value={staffList.length} icon={Users} />
-          <StatCard title="Active Staff" value={activeStaff.length} icon={CheckCircle2} />
-          <StatCard title="On Probation" value={onProbation.length} icon={Clock} />
-          <StatCard title="Confirmed" value={confirmed.length} icon={UserCheck} />
+    <div className="space-y-8 animate-fade-in pb-10">
+      <div className="flex justify-between items-end">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Welcome back, {role.replace('_', ' ')}</h2>
+          <p className="text-muted-foreground">Here's what's happening at RazziStaff today.</p>
+        </div>
+        <div className="flex gap-2">
+          {isSuperAdmin && (
+            <Link to="/access-control">
+              <Button variant="outline" size="sm"><Shield className="w-4 h-4 mr-2" /> Roles</Button>
+            </Link>
+          )}
+          {(isAdmin || hasPermission('canEditStaff')) && (
+            <Link to="/staff/new">
+              <Button size="sm"><UserPlus className="w-4 h-4 mr-2" /> Add Staff</Button>
+            </Link>
+          )}
         </div>
       </div>
 
-      {/* Row 2: HR Actions */}
-      <div>
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">HR Action Items</p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <StatCard title="Missing CVs" value={missingCVStaff.length} icon={FileText} />
-          <StatCard title="Incomplete Profiles" value={incompleteProfiles.length} icon={AlertTriangle} />
-          <StatCard title="No Bank Details" value={missingBank.length} icon={DollarSign} />
-          <StatCard title="Due for Confirmation" value={dueForConfirmation.length} icon={ShieldAlert} />
+      {/* Role-Specific Dashboard Views */}
+      {(role === 'super_admin' || role === 'admin') && (
+        <div className="space-y-8">
+          {/* Admin Stats Row */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard title="Total Staff" value={staffList.length} icon={Users} />
+            <StatCard title="Active Staff" value={activeStaff.length} icon={CheckCircle2} />
+            <StatCard title="On Probation" value={onProbation.length} icon={Clock} />
+            <StatCard title="Pending Review" value={pendingReviewToday.length} icon={AlertTriangle} />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <DashCard title="HR Action Items" icon={ShieldAlert}>
+              <DashListRow name="Missing CVs" right={missingCVStaff.length} />
+              <DashListRow name="Incomplete Profiles" right={incompleteProfiles.length} />
+              <DashListRow name="Due for Confirmation" right={dueForConfirmation.length} />
+              <DashListRow name="Late Clock-ins Today" right={lateClockIns.length} />
+            </DashCard>
+
+            <DashCard title="Today's Workflow" icon={ClipboardList} to="/workflow">
+              <DashListRow name="Reports Submitted" right={todayReports.length} />
+              <DashListRow name="Completed Tasks" right={completedToday.length} />
+              <DashListRow name="Blocked Tasks" right={blockedToday.length} />
+              <DashListRow name="Review Needed" right={pendingReviewToday.length} />
+            </DashCard>
+
+            <DashCard title="Finance Overview" icon={DollarSign} to="/salary">
+              <DashListRow name="Missing Bank Details" right={missingBank.length} />
+              <DashListRow name="Salary Reminders" right={salaryReminders.length} />
+              <div className="pt-2">
+                <Link to="/salary"><Button variant="link" size="sm" className="h-auto p-0 text-primary">View Payroll Schedule</Button></Link>
+              </div>
+            </DashCard>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Row 3: Today's Workflow */}
-      <div>
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Today's Workflow — {format(now, 'EEEE, MMM d yyyy')}</p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <StatCard title="Reports Submitted" value={todayReports.length} icon={ClipboardList} />
-          <StatCard title="Completed Tasks" value={completedToday.length} icon={TrendingUp} />
-          <StatCard title="Blocked Tasks" value={blockedToday.length} icon={XCircle} />
-          <StatCard title="Pending Reviews" value={pendingReviewToday.length} icon={Clock} />
+      {role === 'hr_admin' && (
+        <div className="space-y-8">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard title="Active Staff" value={activeStaff.length} icon={Users} />
+            <StatCard title="Due for Confirmation" value={dueForConfirmation.length} icon={ShieldAlert} />
+            <StatCard title="Missing CVs" value={missingCVStaff.length} icon={FileText} />
+            <StatCard title="Incomplete Profiles" value={incompleteProfiles.length} icon={AlertTriangle} />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <DashCard title="Upcoming Birthdays" icon={Cake} to="/calendar">
+              {upcomingBirthdays.length === 0 ? <EmptyNote text="No birthdays soon" /> : 
+                upcomingBirthdays.map(s => <DashListRow key={s.id} name={s.full_name} sub={s.department} right={format(parseISO(s.date_of_birth), 'MMM d')} />)
+              }
+            </DashCard>
+            <DashCard title="Work Anniversaries" icon={CalendarDays} to="/calendar">
+              {upcomingAnniversaries.length === 0 ? <EmptyNote text="No anniversaries soon" /> : 
+                upcomingAnniversaries.map(s => <DashListRow key={s.id} name={s.full_name} sub={s.department} right={format(parseISO(s.date_joined), 'MMM d')} />)
+              }
+            </DashCard>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Detail cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {role === 'finance_admin' && (
+        <div className="space-y-8">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard title="Staff with Bank" value={staffWithBank.size} icon={Building2} />
+            <StatCard title="Missing Bank" value={missingBank.length} icon={AlertTriangle} />
+            <StatCard title="Reminders" value={salaryReminders.length} icon={DollarSign} />
+            <StatCard title="Total Active" value={activeStaff.length} icon={Users} />
+          </div>
+          <DashCard title="Payment Reminders (Next 5 Days)" icon={DollarSign} to="/salary">
+            {salaryReminders.length === 0 ? <EmptyNote text="No payments due" /> : 
+              salaryReminders.map(b => <DashListRow key={b.id} name={b.staff_name} sub={b.bank_name} right={`Due: ${b.salary_payment_date}th`} />)
+            }
+          </DashCard>
+        </div>
+      )}
 
-        {/* Today's Reports */}
-        <DashCard title="Today's Reports" icon={ClipboardList} to="/workflow">
-          {todayReports.length === 0 ? <EmptyNote text="No reports submitted today" /> : (
-            <div>
-              {todayReports.slice(0, 6).map(r => (
-                <DashListRow key={r.id}
-                  name={r.staff_name}
-                  sub={r.assigned_task || r.work_done?.slice(0, 50)}
-                  right={<StatusBadge status={r.status || 'In Progress'} />}
-                />
-              ))}
-            </div>
-          )}
-        </DashCard>
+      {role === 'manager' && (
+        <div className="space-y-8">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard title="Reports Submitted" value={todayReports.length} icon={ClipboardList} />
+            <StatCard title="Pending Review" value={pendingReviewToday.length} icon={Clock} />
+            <StatCard title="Blocked Tasks" value={blockedToday.length} icon={XCircle} />
+            <StatCard title="Late Clock-ins" value={lateClockIns.length} icon={AlertTriangle} />
+          </div>
+          <DashCard title="Recent Reports for Review" icon={ClipboardList} to="/workflow">
+            {pendingReviewToday.length === 0 ? <EmptyNote text="All caught up!" /> : 
+              pendingReviewToday.slice(0, 5).map(r => <DashListRow key={r.id} name={r.staff_name} sub={r.assigned_task} right={<StatusBadge status={r.status} />} />)
+            }
+          </DashCard>
+        </div>
+      )}
 
-        {/* Upcoming Birthdays */}
-        <DashCard title="Upcoming Birthdays (30 days)" icon={Cake} to="/calendar">
-          {upcomingBirthdays.length === 0 ? <EmptyNote text="No upcoming birthdays in the next 30 days" /> : (
-            <div>
-              {upcomingBirthdays.map(s => (
-                <DashListRow key={s.id}
-                  name={s.full_name}
-                  sub={s.department}
-                  right={format(new Date(now.getFullYear(), parseISO(s.date_of_birth).getMonth(), parseISO(s.date_of_birth).getDate()), 'MMM d')}
-                />
-              ))}
-            </div>
-          )}
-        </DashCard>
+      {role === 'user' && (
+        <div className="space-y-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Card className="md:col-span-2">
+              <CardHeader><CardTitle className="text-lg">Daily Workflow Report</CardTitle></CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">Submit your daily report to keep your manager updated on your progress.</p>
+                <Link to="/workflow"><Button className="w-full sm:w-auto">Go to Workflow Reports</Button></Link>
+              </CardContent>
+            </Card>
+            <DashCard title="My Profile Status" icon={UserCheck}>
+              <div className="space-y-4">
+                <div className="flex justify-between text-sm"><span>Onboarding</span><span className="font-bold">80%</span></div>
+                <div className="w-full bg-muted rounded-full h-2"><div className="bg-primary h-2 rounded-full" style={{ width: '80%' }} /></div>
+                <p className="text-xs text-muted-foreground">Please ensure your bank details and emergency contacts are up to date in Settings.</p>
+              </div>
+            </DashCard>
+          </div>
+        </div>
+      )}
 
-        {/* Missing CVs */}
-        <DashCard title="Staff Missing CVs" icon={FileText} to="/documents">
-          {missingCVStaff.length === 0 ? <EmptyNote text="All active staff have submitted CVs" /> : (
-            <div>
-              {missingCVStaff.slice(0, 6).map(s => (
-                <DashListRow key={s.id}
-                  name={s.full_name}
-                  sub={`${s.department || '—'} · ${s.role || '—'}`}
-                  right={<StatusBadge status="Pending" />}
-                />
-              ))}
-            </div>
-          )}
-        </DashCard>
-
-        {/* Due for Confirmation */}
-        <DashCard title="Confirmation Due (60 days)" icon={UserCheck}>
-          {dueForConfirmation.length === 0 ? <EmptyNote text="No staff due for confirmation" /> : (
-            <div>
-              {dueForConfirmation.map(s => (
-                <DashListRow key={s.id}
-                  name={s.full_name}
-                  sub={s.department}
-                  right={s.probation_end_date ? format(parseISO(s.probation_end_date), 'MMM d, yyyy') : 'N/A'}
-                />
-              ))}
-            </div>
-          )}
-        </DashCard>
-
-        {/* Work Anniversaries */}
-        <DashCard title="Work Anniversaries (30 days)" icon={CalendarDays} to="/calendar">
-          {upcomingAnniversaries.length === 0 ? <EmptyNote text="No work anniversaries in the next 30 days" /> : (
-            <div>
-              {upcomingAnniversaries.map(s => {
-                const joined = parseISO(s.date_joined);
-                const years = now.getFullYear() - joined.getFullYear();
-                return (
-                  <DashListRow key={s.id}
-                    name={s.full_name}
-                    sub={s.department}
-                    right={`${years} yr${years !== 1 ? 's' : ''} · ${format(new Date(now.getFullYear(), joined.getMonth(), joined.getDate()), 'MMM d')}`}
-                  />
-                );
-              })}
-            </div>
-          )}
-        </DashCard>
-
-        {/* Salary Reminders */}
-        <DashCard title="Salary Payment Reminders" icon={DollarSign} to="/salary">
-          {salaryReminders.length === 0 ? <EmptyNote text="No salary payments due in the next 5 days" /> : (
-            <div>
-              {salaryReminders.map(b => (
-                <DashListRow key={b.id}
-                  name={b.staff_name}
-                  sub={b.bank_name}
-                  right={`Due: ${b.salary_payment_date}th`}
-                />
-              ))}
-            </div>
-          )}
-        </DashCard>
-
-        {/* Missing Bank Details */}
-        <DashCard title="Missing Bank/Account Details" icon={Building2} to="/salary">
-          {missingBank.length === 0 ? <EmptyNote text="All active staff have bank details recorded" /> : (
-            <div>
-              {missingBank.slice(0, 6).map(s => (
-                <DashListRow key={s.id}
-                  name={s.full_name}
-                  sub={`${s.department || '—'} · ${s.role || '—'}`}
-                  right={<StatusBadge status="Pending" />}
-                />
-              ))}
-            </div>
-          )}
-        </DashCard>
-
-        {/* Late Clock-ins */}
-        <DashCard title="Late Clock-ins Today" icon={ShieldAlert} to="/workflow">
-          {lateClockIns.length === 0 ? <EmptyNote text="No late clock-ins recorded today" /> : (
-            <div>
-              {lateClockIns.slice(0, 6).map(r => (
-                <DashListRow key={r.id}
-                  name={r.staff_name}
-                  sub={r.department}
-                  right={<StatusBadge status="Late" />}
-                />
-              ))}
-            </div>
-          )}
-        </DashCard>
-
-      </div>
+      {/* Common Footer Grid for Admins */}
+      {(role === 'super_admin' || role === 'admin') && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <DashCard title="Upcoming Birthdays" icon={Cake} to="/calendar">
+            {upcomingBirthdays.length === 0 ? <EmptyNote text="No birthdays soon" /> : 
+              upcomingBirthdays.map(s => <DashListRow key={s.id} name={s.full_name} sub={s.department} right={format(parseISO(s.date_of_birth), 'MMM d')} />)
+            }
+          </DashCard>
+          <DashCard title="Late Clock-ins Today" icon={ShieldAlert} to="/workflow">
+            {lateClockIns.length === 0 ? <EmptyNote text="Everyone is on time!" /> : 
+              lateClockIns.map(r => <DashListRow key={r.id} name={r.staff_name} sub={r.department} right={<StatusBadge status="Late" />} />)
+            }
+          </DashCard>
+        </div>
+      )}
     </div>
   );
 }

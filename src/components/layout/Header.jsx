@@ -9,9 +9,27 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
+import useRoleAccess from '@/lib/useRoleAccess';
+import { useQuery } from '@tanstack/react-query';
+import { entities } from '@/lib/supabaseEntities';
+import { useNavigate } from 'react-router-dom';
 
 export default function Header({ sidebarCollapsed, toggleSidebar, title }) {
-  const { user, logout, getUserRole } = useAuth();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
+  const { role = '', isAdmin } = useRoleAccess();
+  
+  // Fetch staff profile for avatar and full name
+  const { data: staffProfile } = useQuery({
+    queryKey: ['my-profile', user?.email],
+    queryFn: async () => {
+      if (!user?.email) return null;
+      const profiles = await entities.StaffProfile.filter({ email: user.email });
+      return profiles[0] || null;
+    },
+    enabled: !!user?.email,
+  });
+
   const [darkMode, setDarkMode] = React.useState(() => {
     if (typeof window !== 'undefined') return document.documentElement.classList.contains('dark');
     return true;
@@ -22,13 +40,14 @@ export default function Header({ sidebarCollapsed, toggleSidebar, title }) {
     setDarkMode(!darkMode);
   };
 
-  const getInitials = (email) => {
-    if (!email) return 'U';
-    return email.slice(0, 2).toUpperCase();
+  const getInitials = (name, email) => {
+    if (name) return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+    if (email) return email.slice(0, 2).toUpperCase();
+    return 'U';
   };
 
-  const displayName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
-  const role = getUserRole ? getUserRole() : 'user';
+  const displayName = staffProfile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
+  const avatarUrl = staffProfile?.profile_photo_url || user?.user_metadata?.avatar_url;
 
   return (
     <header className={cn(
@@ -72,9 +91,9 @@ export default function Header({ sidebarCollapsed, toggleSidebar, title }) {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="flex items-center gap-2 h-9 px-2 rounded-full">
                 <Avatar className="w-7 h-7">
-                  <AvatarImage src={user?.user_metadata?.avatar_url} />
+                  <AvatarImage src={avatarUrl} />
                   <AvatarFallback className="text-xs bg-primary/20 text-primary font-semibold">
-                    {getInitials(user?.email)}
+                    {getInitials(displayName, user?.email)}
                   </AvatarFallback>
                 </Avatar>
                 <span className="hidden md:block text-sm font-medium max-w-28 truncate">{displayName}</span>
@@ -89,7 +108,10 @@ export default function Header({ sidebarCollapsed, toggleSidebar, title }) {
                 </span>
               </div>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="gap-2 text-sm cursor-pointer">
+              <DropdownMenuItem 
+                className="gap-2 text-sm cursor-pointer"
+                onClick={() => staffProfile ? navigate(`/staff/${staffProfile.id}`) : navigate('/settings')}
+              >
                 <User className="w-4 h-4" /> Profile
               </DropdownMenuItem>
               <DropdownMenuSeparator />

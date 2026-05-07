@@ -11,6 +11,7 @@ import MainLayout from './components/layout/MainLayout';
 // Pages
 import Login from './pages/Login';
 import Register from './pages/Register';
+import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import StaffDirectory from './pages/StaffDirectory';
 import StaffForm from './pages/StaffForm';
@@ -21,6 +22,7 @@ import WorkflowReports from './pages/WorkflowReports';
 import HRCalendar from './pages/HRCalendar';
 import Analytics from './pages/Analytics';
 import AuditLogs from './pages/AuditLogs';
+import AccessControl from './pages/AccessControl';
 import Recommendations from './pages/Recommendations';
 import Settings from './pages/Settings';
 
@@ -43,6 +45,7 @@ const AuthenticatedApp = () => {
     <Routes>
       <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/register" element={isAuthenticated ? <Navigate to="/" replace /> : <Register />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route element={isAuthenticated ? <MainLayout /> : <Navigate to="/login" replace />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/staff" element={<StaffDirectory />} />
@@ -52,9 +55,10 @@ const AuthenticatedApp = () => {
         <Route path="/salary" element={<SalaryManagement />} />
         <Route path="/workflow" element={<WorkflowReports />} />
         <Route path="/calendar" element={<HRCalendar />} />
-        <Route path="/analytics" element={<Analytics />} />
-        <Route path="/audit-logs" element={<AuditLogs />} />
-        <Route path="/recommendations" element={<Recommendations />} />
+          <Route path="/analytics" element={<Analytics />} />
+          <Route path="/audit-logs" element={<AuditLogs />} />
+          <Route path="/access-control" element={<AccessControl />} />
+          <Route path="/recommendations" element={<Recommendations />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />

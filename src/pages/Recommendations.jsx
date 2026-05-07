@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ExternalLink, Lightbulb, Globe, MessageSquare, BarChart3, CheckCircle2, ArrowRight } from 'lucide-react';
+import { Lightbulb, CheckCircle2, ArrowRight } from 'lucide-react';
 
 const platforms = [
   {

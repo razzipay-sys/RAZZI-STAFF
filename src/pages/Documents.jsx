@@ -1,13 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { entities } from '@/lib/supabaseEntities';
-import { useAuth } from '@/lib/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Search, Eye, FileText, Filter } from 'lucide-react';
+import { Search, Eye, FileText, Download } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
 import { PageLoader } from '@/components/ui/LoadingSpinner';
@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import useRoleAccess from '@/lib/useRoleAccess';
 import useAuditLog from '@/lib/useAuditLog';
 import { format, parseISO } from 'date-fns';
+import { exportToCSV, exportToPDF } from '@/lib/exportUtils';
 
 const DOC_TYPES = ['All', 'CV', 'ID Card', 'Offer Letter', 'Appointment Letter', 'Confirmation Letter', 'NDA', 'Contract', 'Certificate', 'Other'];
 const DOC_STATUSES = ['All', 'Pending', 'Submitted', 'Reviewed', 'Requires Update', 'Approved', 'Rejected'];
@@ -29,7 +30,7 @@ export default function Documents() {
 
   const { data: documents = [], isLoading } = useQuery({
     queryKey: ['all-documents'],
-    queryFn: () => entities.StaffDocument.list('-created_date', 200),
+    queryFn: () => entities.StaffDocument.list('-created_at', 200),
   });
 
   const updateStatus = useMutation({
@@ -58,15 +59,55 @@ export default function Documents() {
     });
   }, [documents, search, typeFilter, statusFilter]);
 
+  const handleExport = async (format) => {
+    const dataToExport = filtered.map(d => ({
+      Staff: d.staff_name,
+      Document: d.document_name,
+      Type: d.document_type,
+      Status: d.status,
+      Uploaded: d.created_at ? format(parseISO(d.created_at), 'yyyy-MM-dd') : 'N/A'
+    }));
+
+    if (format === 'csv') {
+      exportToCSV(dataToExport, 'Documents_Report');
+    } else {
+      exportToPDF(dataToExport, { 
+        title: 'Staff Documents Report', 
+        filename: 'Documents_Report',
+        headers: ['Staff', 'Document', 'Type', 'Status', 'Uploaded']
+      });
+    }
+
+    await logAction({
+      actionType: 'EXPORT',
+      entityType: 'StaffDocument',
+      notes: `Exported ${filtered.length} document records as ${format.toUpperCase()}`
+    });
+    toast.success(`Exported as ${format.toUpperCase()}`);
+  };
+
   if (isLoading) return <PageLoader />;
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex flex-col sm:flex-row gap-4 justify-between">
+      <div className="flex flex-col sm:flex-row gap-4 justify-between items-start">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input placeholder="Search documents..." value={search} onChange={e => setSearch(e.target.value)} className="pl-10" />
         </div>
+        {hasPermission('canExport') && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                <Download className="w-4 h-4 mr-2" /> Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleExport('csv')}>Export as CSV</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport('pdf')}>Export as PDF</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-3">
@@ -106,7 +147,7 @@ export default function Documents() {
                     <TableCell><StatusBadge status={doc.document_type} /></TableCell>
                     <TableCell><StatusBadge status={doc.status} /></TableCell>
                     <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                      {doc.created_date ? format(parseISO(doc.created_date), 'MMM d, yyyy') : 'N/A'}
+                      {doc.created_at ? format(parseISO(doc.created_at), 'MMM d, yyyy') : 'N/A'}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -115,7 +156,7 @@ export default function Documents() {
                             <Button variant="ghost" size="icon"><Eye className="w-4 h-4" /></Button>
                           </a>
                         )}
-                        {(isAdmin() || hasPermission('canEditDocuments')) && (
+                        {(isAdmin || hasPermission('canEditDocuments')) && (
                           <Select defaultValue={doc.status} onValueChange={v => updateStatus.mutate({ docId: doc.id, status: v, staffName: doc.staff_name })}>
                             <SelectTrigger className="w-32 h-8 text-xs"><SelectValue /></SelectTrigger>
                             <SelectContent>

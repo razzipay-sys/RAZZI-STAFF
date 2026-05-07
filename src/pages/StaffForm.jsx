@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { entities } from '@/lib/supabaseEntities';
-import { useAuth } from '@/lib/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Save, ArrowLeft } from 'lucide-react';
@@ -36,7 +35,7 @@ export default function StaffForm() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { logAction } = useAuditLog();
-  const { isAdmin, hasPermission } = useRoleAccess();
+  const { isAdmin, isSuperAdmin, hasPermission } = useRoleAccess();
   const urlParams = new URLSearchParams(window.location.search);
   const editId = urlParams.get('edit');
 
@@ -51,8 +50,8 @@ export default function StaffForm() {
 
   // Get the latest staff to generate the next ID
   const { data: allStaff = [] } = useQuery({
-    queryKey: ['staff-profiles-brief'],
-    queryFn: () => entities.StaffProfile.list('-created_at', 1),
+    queryKey: ['staff-profiles', 'latest'],
+    queryFn: () => entities.StaffProfile.list('-staff_id', 1),
     enabled: !editId,
   });
 
@@ -99,6 +98,7 @@ export default function StaffForm() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['staff-profiles'] });
+      queryClient.invalidateQueries({ queryKey: ['staff-profiles', 'latest'] });
       toast.success(editId ? 'Staff profile updated' : 'Staff profile created');
       navigate('/staff');
     },
@@ -242,7 +242,7 @@ export default function StaffForm() {
                         <SelectItem value="hr_admin">HR Admin</SelectItem>
                         <SelectItem value="finance_admin">Finance Admin</SelectItem>
                         <SelectItem value="admin">Admin</SelectItem>
-                        {isAdmin() && <SelectItem value="super_admin">Super Admin</SelectItem>}
+                        {isSuperAdmin && <SelectItem value="super_admin">Super Admin</SelectItem>}
                       </SelectContent>
                     </Select>
                   </div>

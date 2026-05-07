@@ -3,8 +3,8 @@ import { entities } from '@/lib/supabaseEntities';
 import { useAuth } from '@/lib/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
-import { Plus, Search, Filter, MessageSquare, Clock, CheckCircle2 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Plus, Search, MessageSquare, CheckCircle2 } from 'lucide-react';
+import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -18,6 +18,9 @@ import { PageLoader } from '@/components/ui/LoadingSpinner';
 import { toast } from 'sonner';
 import useRoleAccess from '@/lib/useRoleAccess';
 import useAuditLog from '@/lib/useAuditLog';
+import { exportToCSV, exportToPDF } from '@/lib/exportUtils';
+import { Download } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 const emptyReport = {
   staff_name: '', department: '', report_date: format(new Date(), 'yyyy-MM-dd'),
@@ -30,7 +33,8 @@ const emptyReport = {
 
 export default function WorkflowReports() {
   const queryClient = useQueryClient();
-  const { user, hasPermission, isAdmin } = useRoleAccess();
+  const { user } = useAuth();
+  const { hasPermission, isAdmin } = useRoleAccess();
   const { logAction } = useAuditLog();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState(emptyReport);
@@ -48,7 +52,7 @@ export default function WorkflowReports() {
 
   const { data: staffList = [] } = useQuery({
     queryKey: ['staff-profiles'],
-    queryFn: () => entities.StaffProfile.list('-created_date', 200),
+    queryFn: () => entities.StaffProfile.list('-created_at', 200),
   });
 
   const createReport = useMutation({
@@ -108,6 +112,35 @@ export default function WorkflowReports() {
     });
   }, [reports, search, statusFilter, reviewFilter, dateFilter]);
 
+  const handleExport = async (format) => {
+    const dataToExport = filtered.map(r => ({
+      Staff: r.staff_name,
+      Date: r.report_date,
+      Task: r.assigned_task || r.work_done,
+      Priority: r.priority,
+      Status: r.status,
+      Review: r.review_status,
+      Hours: r.hours_worked
+    }));
+
+    if (format === 'csv') {
+      exportToCSV(dataToExport, 'Workflow_Reports');
+    } else {
+      exportToPDF(dataToExport, {
+        title: 'Daily Workflow Reports',
+        filename: 'Workflow_Reports',
+        headers: ['Staff', 'Date', 'Task', 'Priority', 'Status', 'Review', 'Hours']
+      });
+    }
+
+    await logAction({
+      actionType: 'EXPORT',
+      entityType: 'DailyWorkflowReport',
+      notes: `Exported ${filtered.length} reports as ${format.toUpperCase()}`
+    });
+    toast.success(`Exported as ${format.toUpperCase()}`);
+  };
+
   const updateField = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
   if (isLoading) return <PageLoader />;
@@ -120,87 +153,102 @@ export default function WorkflowReports() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input placeholder="Search reports..." value={search} onChange={e => setSearch(e.target.value)} className="pl-10" />
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="gradient-primary text-primary-foreground">
-              <Plus className="w-4 h-4 mr-2" /> Submit Report
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader><DialogTitle>Submit Daily Workflow Report</DialogTitle></DialogHeader>
-            <form onSubmit={e => { e.preventDefault(); createReport.mutate(form); }} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Report Date *</Label>
-                  <Input type="date" value={form.report_date} onChange={e => updateField('report_date', e.target.value)} required />
+        <div className="flex gap-2">
+          {hasPermission('canExport') && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  <Download className="w-4 h-4 mr-2" /> Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleExport('csv')}>Export as CSV</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport('pdf')}>Export as PDF</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="gradient-primary text-primary-foreground">
+                <Plus className="w-4 h-4 mr-2" /> Submit Report
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader><DialogTitle>Submit Daily Workflow Report</DialogTitle></DialogHeader>
+              <form onSubmit={e => { e.preventDefault(); createReport.mutate(form); }} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Report Date *</Label>
+                    <Input type="date" value={form.report_date} onChange={e => updateField('report_date', e.target.value)} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Priority</Label>
+                    <Select value={form.priority} onValueChange={v => updateField('priority', v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {['Low', 'Medium', 'High', 'Urgent'].map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Assigned Task</Label>
+                    <Input value={form.assigned_task} onChange={e => updateField('assigned_task', e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <Select value={form.status} onValueChange={v => updateField('status', v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {['Not Started', 'In Progress', 'Completed', 'Pending Review', 'Blocked', 'Carried Forward'].map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Work Mode Today</Label>
+                    <Select value={form.work_mode_for_day} onValueChange={v => updateField('work_mode_for_day', v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {['Remote', 'On-site', 'Hybrid'].map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Hours Worked</Label>
+                    <Input type="number" step="0.5" min="0" value={form.hours_worked} onChange={e => updateField('hours_worked', parseFloat(e.target.value) || 0)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Clock In</Label>
+                    <Input type="time" value={form.clock_in_time} onChange={e => updateField('clock_in_time', e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Clock Out</Label>
+                    <Input type="time" value={form.clock_out_time} onChange={e => updateField('clock_out_time', e.target.value)} />
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Priority</Label>
-                  <Select value={form.priority} onValueChange={v => updateField('priority', v)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {['Low', 'Medium', 'High', 'Urgent'].map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <Label>What I Worked On Today *</Label>
+                  <Textarea value={form.work_done} onChange={e => updateField('work_done', e.target.value)} rows={3} required />
                 </div>
                 <div className="space-y-2">
-                  <Label>Assigned Task</Label>
-                  <Input value={form.assigned_task} onChange={e => updateField('assigned_task', e.target.value)} />
+                  <Label>Proof/Link</Label>
+                  <Input value={form.proof_link} onChange={e => updateField('proof_link', e.target.value)} placeholder="URL or file reference" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Status</Label>
-                  <Select value={form.status} onValueChange={v => updateField('status', v)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {['Not Started', 'In Progress', 'Completed', 'Pending Review', 'Blocked', 'Carried Forward'].map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <Label>Blockers/Challenges</Label>
+                  <Textarea value={form.blockers} onChange={e => updateField('blockers', e.target.value)} rows={2} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Work Mode Today</Label>
-                  <Select value={form.work_mode_for_day} onValueChange={v => updateField('work_mode_for_day', v)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {['Remote', 'On-site', 'Hybrid'].map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <Label>Plan for Tomorrow</Label>
+                  <Textarea value={form.next_action} onChange={e => updateField('next_action', e.target.value)} rows={2} />
                 </div>
-                <div className="space-y-2">
-                  <Label>Hours Worked</Label>
-                  <Input type="number" step="0.5" min="0" value={form.hours_worked} onChange={e => updateField('hours_worked', parseFloat(e.target.value) || 0)} />
+                <div className="flex justify-end gap-3">
+                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+                  <Button type="submit" disabled={createReport.isPending}>Submit Report</Button>
                 </div>
-                <div className="space-y-2">
-                  <Label>Clock In</Label>
-                  <Input type="time" value={form.clock_in_time} onChange={e => updateField('clock_in_time', e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Clock Out</Label>
-                  <Input type="time" value={form.clock_out_time} onChange={e => updateField('clock_out_time', e.target.value)} />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label>What I Worked On Today *</Label>
-                <Textarea value={form.work_done} onChange={e => updateField('work_done', e.target.value)} rows={3} required />
-              </div>
-              <div className="space-y-2">
-                <Label>Proof/Link</Label>
-                <Input value={form.proof_link} onChange={e => updateField('proof_link', e.target.value)} placeholder="URL or file reference" />
-              </div>
-              <div className="space-y-2">
-                <Label>Blockers/Challenges</Label>
-                <Textarea value={form.blockers} onChange={e => updateField('blockers', e.target.value)} rows={2} />
-              </div>
-              <div className="space-y-2">
-                <Label>Plan for Tomorrow</Label>
-                <Textarea value={form.next_action} onChange={e => updateField('next_action', e.target.value)} rows={2} />
-              </div>
-              <div className="flex justify-end gap-3">
-                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-                <Button type="submit" disabled={createReport.isPending}>Submit Report</Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {/* Filters */}
@@ -237,7 +285,7 @@ export default function WorkflowReports() {
                   <TableHead>Status</TableHead>
                   <TableHead className="hidden sm:table-cell">Review</TableHead>
                   <TableHead className="hidden lg:table-cell">Hours</TableHead>
-                  {(isAdmin() || hasPermission('canReviewReports')) && <TableHead>Actions</TableHead>}
+                  {(isAdmin || hasPermission('canReviewReports')) && <TableHead>Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -255,7 +303,7 @@ export default function WorkflowReports() {
                     <TableCell><StatusBadge status={r.status || 'In Progress'} /></TableCell>
                     <TableCell className="hidden sm:table-cell"><StatusBadge status={r.review_status || 'Pending Review'} /></TableCell>
                     <TableCell className="hidden lg:table-cell text-sm">{r.hours_worked || '-'}</TableCell>
-                    {(isAdmin() || hasPermission('canReviewReports')) && (
+                    {(isAdmin || hasPermission('canReviewReports')) && (
                       <TableCell>
                         <Button variant="ghost" size="sm" onClick={() => setReviewDialog(r)}>
                           <MessageSquare className="w-4 h-4" />

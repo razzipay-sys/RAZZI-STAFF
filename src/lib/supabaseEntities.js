@@ -13,6 +13,8 @@ const TABLE_MAP = {
   StaffDocument: 'staff_documents',
   DailyWorkflowReport: 'daily_workflow_reports',
   AuditLog: 'audit_logs',
+  UserRole: 'user_roles',
+  AppSetting: 'app_settings',
 };
 
 function buildEntity(tableName) {

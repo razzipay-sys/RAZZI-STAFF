@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
 import { entities } from '@/lib/supabaseEntities';
 import supabase from '@/lib/supabase';
-import { useAuth } from '@/lib/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import {
-  ArrowLeft, Edit, Mail, Phone, MapPin, Building2, Calendar,
-  Briefcase, Shield, FileText, Upload, Eye, Download, Trash2, Plus
+  ArrowLeft, Edit, Mail, Phone, Shield, FileText, Eye, Download, Plus
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -23,6 +21,8 @@ import { PageLoader } from '@/components/ui/LoadingSpinner';
 import { toast } from 'sonner';
 import useRoleAccess from '@/lib/useRoleAccess';
 import useAuditLog from '@/lib/useAuditLog';
+import { exportToCSV, exportToPDF } from '@/lib/exportUtils';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 export default function StaffProfile() {
   const { id } = useParams();
@@ -98,9 +98,43 @@ export default function StaffProfile() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['staff-documents', id] });
-      toast.success('Document status updated');
+      toast.success('Status updated');
     }
   });
+
+  const handleExportProfile = async (format) => {
+    const dataToExport = [{
+      ID: staff.staff_id,
+      Name: staff.full_name,
+      Email: staff.email,
+      Phone: staff.phone,
+      Department: staff.department,
+      Role: staff.role,
+      Joined: staff.date_joined,
+      Address: staff.residential_address,
+      Emergency_Contact: staff.emergency_contact_name,
+      Emergency_Phone: staff.emergency_contact_phone
+    }];
+
+    if (format === 'csv') {
+      exportToCSV(dataToExport, `Staff_Profile_${staff.staff_id}`);
+    } else {
+      exportToPDF(dataToExport, { 
+        title: `Staff Profile: ${staff.full_name}`, 
+        filename: `Staff_Profile_${staff.staff_id}`,
+        headers: ['ID', 'Name', 'Email', 'Department', 'Role', 'Joined', 'Phone']
+      });
+    }
+
+    await logAction({
+      actionType: 'EXPORT',
+      entityType: 'StaffProfile',
+      entityId: id,
+      entityName: staff.full_name,
+      notes: `Exported staff profile as ${format.toUpperCase()}`
+    });
+    toast.success(`Exported as ${format.toUpperCase()}`);
+  };
 
   if (isLoading) return <PageLoader />;
   const staff = staffArr[0];
@@ -145,11 +179,26 @@ export default function StaffProfile() {
                 {staff.staff_id && <span className="flex items-center gap-1"><Shield className="w-3.5 h-3.5" /> {staff.staff_id}</span>}
               </div>
             </div>
-            {(isAdmin() || hasPermission('canEditStaff')) && (
-              <Button variant="outline" onClick={() => navigate(`/staff/new?edit=${staff.id}`)}>
-                <Edit className="w-4 h-4 mr-2" /> Edit
-              </Button>
-            )}
+            <div className="flex flex-col sm:flex-row gap-2">
+              {hasPermission('canExport') && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline">
+                      <Download className="w-4 h-4 mr-2" /> Export
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => handleExportProfile('csv')}>Export as CSV</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleExportProfile('pdf')}>Export as PDF</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              {(isAdmin || hasPermission('canEditStaff')) && (
+                <Button variant="outline" onClick={() => navigate(`/staff/new?edit=${staff.id}`)}>
+                  <Edit className="w-4 h-4 mr-2" /> Edit
+                </Button>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -216,7 +265,7 @@ export default function StaffProfile() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">Documents</CardTitle>
-              {(isAdmin() || hasPermission('canEditDocuments')) && (
+              {(isAdmin || hasPermission('canEditDocuments')) && (
                 <Dialog open={docDialogOpen} onOpenChange={setDocDialogOpen}>
                   <DialogTrigger asChild>
                     <Button size="sm"><Plus className="w-4 h-4 mr-1" /> Upload</Button>
@@ -271,7 +320,7 @@ export default function StaffProfile() {
                             <Button variant="ghost" size="icon"><Eye className="w-4 h-4" /></Button>
                           </a>
                         )}
-                        {(isAdmin() || hasPermission('canEditDocuments')) && (
+                        {(isAdmin || hasPermission('canEditDocuments')) && (
                           <Select defaultValue={doc.status} onValueChange={v => updateDocStatus.mutate({ docId: doc.id, status: v })}>
                             <SelectTrigger className="w-32 h-8 text-xs"><SelectValue /></SelectTrigger>
                             <SelectContent>

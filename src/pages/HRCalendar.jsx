@@ -1,17 +1,15 @@
 import React from 'react';
 import { entities } from '@/lib/supabaseEntities';
-import { useAuth } from '@/lib/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import { format, parseISO, isAfter, isBefore, addDays } from 'date-fns';
-import { Cake, UserCheck, Calendar, CalendarDays, Clock } from 'lucide-react';
+import { Cake, UserCheck, CalendarDays, Clock } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import StatusBadge from '@/components/ui/StatusBadge';
 import { PageLoader } from '@/components/ui/LoadingSpinner';
 
 export default function HRCalendar() {
   const { data: staffList = [], isLoading } = useQuery({
     queryKey: ['staff-profiles'],
-    queryFn: () => entities.StaffProfile.list('-created_date', 200),
+    queryFn: () => entities.StaffProfile.list('-created_at', 200),
   });
 
   if (isLoading) return <PageLoader />;

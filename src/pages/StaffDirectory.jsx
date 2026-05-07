@@ -1,13 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { entities } from '@/lib/supabaseEntities';
-import { useAuth } from '@/lib/AuthContext';
 import { useQuery } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { 
-  Plus, Search, Filter, Download, ChevronDown,
-  Mail, Phone, Building2, MapPin
+  Plus, Search, Download
 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { 
@@ -21,6 +19,10 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
 import { PageLoader } from '@/components/ui/LoadingSpinner';
 import useRoleAccess from '@/lib/useRoleAccess';
+import useAuditLog from '@/lib/useAuditLog';
+import { exportToCSV, exportToPDF } from '@/lib/exportUtils';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { toast } from 'sonner';
 
 const DEPARTMENTS = ['All', 'Engineering', 'Finance', 'Operations', 'HR', 'Marketing', 'Sales', 'Customer Support', 'Legal', 'Product', 'Executive'];
 const STATUSES = ['All', 'Active', 'Suspended', 'Resigned', 'Terminated', 'On Leave'];
@@ -30,6 +32,7 @@ const EMPLOYMENT_TYPES = ['All', 'Full-time', 'Part-time', 'Contract', 'Intern',
 export default function StaffDirectory() {
   const navigate = useNavigate();
   const { hasPermission, isAdmin } = useRoleAccess();
+  const { logAction } = useAuditLog();
   const [search, setSearch] = useState('');
   const [department, setDepartment] = useState('All');
   const [status, setStatus] = useState('All');
@@ -38,7 +41,7 @@ export default function StaffDirectory() {
 
   const { data: staffList = [], isLoading } = useQuery({
     queryKey: ['staff-profiles'],
-    queryFn: () => entities.StaffProfile.list('-created_date', 200),
+    queryFn: () => entities.StaffProfile.list('-created_at', 200),
   });
 
   const filtered = useMemo(() => {
@@ -64,6 +67,37 @@ export default function StaffDirectory() {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
 
+  const handleExport = async (format) => {
+    const dataToExport = filtered.map(s => ({
+      ID: s.staff_id,
+      Name: s.full_name,
+      Email: s.email,
+      Phone: s.phone,
+      Department: s.department,
+      Role: s.role,
+      Status: s.employment_status,
+      Mode: s.work_mode,
+      Joined: s.date_joined
+    }));
+
+    if (format === 'csv') {
+      exportToCSV(dataToExport, 'Staff_Directory');
+    } else {
+      exportToPDF(dataToExport, { 
+        title: 'Staff Directory Report', 
+        filename: 'Staff_Directory',
+        headers: ['ID', 'Name', 'Email', 'Phone', 'Department', 'Role', 'Status', 'Mode', 'Joined']
+      });
+    }
+
+    await logAction({
+      actionType: 'EXPORT',
+      entityType: 'StaffProfile',
+      notes: `Exported ${filtered.length} staff records as ${format.toUpperCase()}`
+    });
+    toast.success(`Exported as ${format.toUpperCase()}`);
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Actions Bar */}
@@ -78,7 +112,20 @@ export default function StaffDirectory() {
           />
         </div>
         <div className="flex gap-2">
-          {(isAdmin() || hasPermission('canEditStaff')) && (
+          {hasPermission('canExport') && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  <Download className="w-4 h-4 mr-2" /> Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleExport('csv')}>Export as CSV</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport('pdf')}>Export as PDF</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          {(isAdmin || hasPermission('canEditStaff')) && (
             <Button onClick={() => navigate('/staff/new')} className="gradient-primary text-primary-foreground">
               <Plus className="w-4 h-4 mr-2" /> Add Staff
             </Button>
@@ -130,7 +177,7 @@ export default function StaffDirectory() {
         <EmptyState 
           title="No staff members found"
           description="Try adjusting your filters or add a new staff member."
-          action={isAdmin() ? () => navigate('/staff/new') : undefined}
+          action={isAdmin ? () => navigate('/staff/new') : undefined}
           actionLabel="Add Staff"
         />
       ) : (

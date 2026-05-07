@@ -1,11 +1,10 @@
 import React, { useMemo } from 'react';
 import { entities } from '@/lib/supabaseEntities';
-import { useAuth } from '@/lib/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import { format, parseISO, subDays, isAfter } from 'date-fns';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, ClipboardList, CheckCircle2, AlertTriangle, TrendingUp, BarChart3 } from 'lucide-react';
+import { Users, ClipboardList, AlertTriangle, TrendingUp } from 'lucide-react';
 import StatCard from '@/components/ui/StatCard';
 import { PageLoader } from '@/components/ui/LoadingSpinner';
 
@@ -14,7 +13,7 @@ const COLORS = ['hsl(174, 72%, 46%)', 'hsl(199, 89%, 48%)', 'hsl(38, 92%, 50%)',
 export default function Analytics() {
   const { data: staffList = [], isLoading: ls } = useQuery({
     queryKey: ['staff-profiles'],
-    queryFn: () => entities.StaffProfile.list('-created_date', 200),
+    queryFn: () => entities.StaffProfile.list('-created_at', 200),
   });
 
   const { data: reports = [], isLoading: lr } = useQuery({

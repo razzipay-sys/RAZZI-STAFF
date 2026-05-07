@@ -1,65 +1,92 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
+import { useQuery } from '@tanstack/react-query';
+import { entities } from './supabaseEntities';
 
-const ROLE_PERMISSIONS = {
+export const ROLE_PERMISSIONS = {
   super_admin: {
     canViewAllStaff: true, canEditStaff: true, canViewSalary: true,
     canEditSalary: true, canViewDocuments: true, canEditDocuments: true,
     canViewWorkflow: true, canEditWorkflow: true, canReviewReports: true,
     canViewAuditLogs: true, canExport: true, canDeleteRecords: true,
-    canManageRoles: true,
+    canManageRoles: true, canEditSettings: true,
   },
   admin: {
     canViewAllStaff: true, canEditStaff: true, canViewSalary: false,
     canEditSalary: false, canViewDocuments: true, canEditDocuments: true,
     canViewWorkflow: true, canEditWorkflow: true, canReviewReports: true,
     canViewAuditLogs: true, canExport: true, canDeleteRecords: false,
-    canManageRoles: true,
+    canManageRoles: true, canEditSettings: true,
   },
   hr_admin: {
     canViewAllStaff: true, canEditStaff: true, canViewSalary: false,
     canEditSalary: false, canViewDocuments: true, canEditDocuments: true,
     canViewWorkflow: true, canEditWorkflow: false, canReviewReports: false,
     canViewAuditLogs: false, canExport: true, canDeleteRecords: false,
+    canEditSettings: false,
   },
   finance_admin: {
     canViewAllStaff: true, canEditStaff: false, canViewSalary: true,
     canEditSalary: true, canViewDocuments: false, canEditDocuments: false,
     canViewWorkflow: false, canEditWorkflow: false, canReviewReports: false,
     canViewAuditLogs: false, canExport: true, canDeleteRecords: false,
+    canEditSettings: false,
   },
   manager: {
-    canViewAllStaff: false, canEditStaff: false, canViewSalary: false,
+    canViewAllStaff: true, canEditStaff: false, canViewSalary: false,
     canEditSalary: false, canViewDocuments: false, canEditDocuments: false,
-    canViewWorkflow: true, canEditWorkflow: false, canReviewReports: true,
-    canViewAuditLogs: false, canExport: false, canDeleteRecords: false,
+    canViewWorkflow: true, canEditWorkflow: true, canReviewReports: true,
+    canViewAuditLogs: false, canExport: true, canDeleteRecords: false,
+    canEditSettings: false,
   },
   user: {
     canViewAllStaff: false, canEditStaff: false, canViewSalary: false,
     canEditSalary: false, canViewDocuments: false, canEditDocuments: false,
-    canViewWorkflow: false, canEditWorkflow: false, canReviewReports: false,
+    canViewWorkflow: true, canEditWorkflow: true, canReviewReports: false,
     canViewAuditLogs: false, canExport: false, canDeleteRecords: false,
+    canEditSettings: false,
   },
 };
 
-export const useRoleAccess = () => {
-  const { user, isLoadingAuth, getUserRole } = useAuth();
-  const [permissions, setPermissions] = useState(ROLE_PERMISSIONS.user);
-  const [isLoading, setIsLoading] = useState(true);
+export default function useRoleAccess() {
+  const { user } = useAuth();
+  
+  // Fetch role from user_roles table
+  const { data: dbRoleData, isLoading } = useQuery({
+    queryKey: ['user-role', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const roles = await entities.UserRole.filter({ user_id: user.id });
+      return roles[0] || null;
+    },
+    enabled: !!user?.id,
+  });
 
-  useEffect(() => {
-    if (!isLoadingAuth) {
-      const role = getUserRole ? getUserRole() : 'user';
-      setPermissions(ROLE_PERMISSIONS[role] || ROLE_PERMISSIONS.user);
-      setIsLoading(false);
-    }
-  }, [user, isLoadingAuth]);
+  const getRole = () => {
+    if (!user) return 'guest';
+    
+    // 1. Super Admin Override
+    if (user.email === import.meta.env.VITE_SUPER_ADMIN_EMAIL) return 'super_admin';
+    
+    // 2. Database Role
+    if (dbRoleData?.role) return dbRoleData.role;
+    
+    // 3. Metadata Fallback
+    return user.user_metadata?.role || 'user';
+  };
 
-  const hasPermission = (p) => permissions[p] === true;
-  const isAdmin = () => ['super_admin', 'admin', 'hr_admin', 'finance_admin'].includes(getUserRole?.() || 'user');
-  const isSuperAdmin = () => (getUserRole?.() || 'user') === 'super_admin';
+  const role = getRole();
+  const permissions = ROLE_PERMISSIONS[role] || ROLE_PERMISSIONS.user;
 
-  return { user, permissions, isLoading, hasPermission, isAdmin, isSuperAdmin };
-};
-
-export default useRoleAccess;
+  return {
+    user,
+    role,
+    permissions,
+    isLoading,
+    isAdmin: ['admin', 'super_admin'].includes(role),
+    isSuperAdmin: role === 'super_admin',
+    hasPermission: (perm) => !!permissions[perm],
+    canManageRoles: !!permissions.canManageRoles,
+    canEditSettings: !!permissions.canEditSettings
+  };
+}

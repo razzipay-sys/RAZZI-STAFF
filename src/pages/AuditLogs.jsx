@@ -1,26 +1,30 @@
 import React, { useState, useMemo } from 'react';
 import { entities } from '@/lib/supabaseEntities';
-import { useAuth } from '@/lib/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
-import { Search, Shield, Filter } from 'lucide-react';
+import { Search, Shield, Download } from 'lucide-react';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import StatusBadge from '@/components/ui/StatusBadge';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import EmptyState from '@/components/ui/EmptyState';
 import { PageLoader } from '@/components/ui/LoadingSpinner';
 import useRoleAccess from '@/lib/useRoleAccess';
+import useAuditLog from '@/lib/useAuditLog';
+import { exportToCSV, exportToPDF } from '@/lib/exportUtils';
+import { toast } from 'sonner';
 
 export default function AuditLogs() {
   const { hasPermission } = useRoleAccess();
+  const { logAction } = useAuditLog();
   const [search, setSearch] = useState('');
   const [actionFilter, setActionFilter] = useState('All');
 
   const { data: logs = [], isLoading } = useQuery({
     queryKey: ['audit-logs'],
-    queryFn: () => entities.AuditLog.list('-created_date', 200),
+    queryFn: () => entities.AuditLog.list('-created_at', 200),
     enabled: hasPermission('canViewAuditLogs'),
   });
 
@@ -34,6 +38,35 @@ export default function AuditLogs() {
       return matchSearch && matchAction;
     });
   }, [logs, search, actionFilter]);
+
+  const handleExport = async (format) => {
+    const dataToExport = filtered.map(l => ({
+      Timestamp: l.created_at,
+      Action: l.action_type,
+      Entity: l.entity_type,
+      Name: l.entity_name,
+      PerformedBy: l.performed_by,
+      Role: l.performed_by_role,
+      Notes: l.notes
+    }));
+
+    if (format === 'csv') {
+      exportToCSV(dataToExport, 'Audit_Logs');
+    } else {
+      exportToPDF(dataToExport, { 
+        title: 'System Audit Logs Report', 
+        filename: 'Audit_Logs',
+        headers: ['Timestamp', 'Action', 'Entity', 'Name', 'PerformedBy', 'Role', 'Notes']
+      });
+    }
+
+    await logAction({
+      actionType: 'EXPORT',
+      entityType: 'AuditLog',
+      notes: `Exported ${filtered.length} audit logs as ${format.toUpperCase()}`
+    });
+    toast.success(`Exported as ${format.toUpperCase()}`);
+  };
 
   if (!hasPermission('canViewAuditLogs')) {
     return <EmptyState icon={Shield} title="Access Restricted" description="You don't have permission to view audit logs." />;
@@ -51,19 +84,34 @@ export default function AuditLogs() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex flex-col sm:flex-row gap-4">
+      <div className="flex flex-col sm:flex-row gap-4 justify-between items-start">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input placeholder="Search logs..." value={search} onChange={e => setSearch(e.target.value)} className="pl-10" />
         </div>
-        <Select value={actionFilter} onValueChange={setActionFilter}>
-          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Action" /></SelectTrigger>
-          <SelectContent>
-            {['All', 'CREATE', 'UPDATE', 'DELETE', 'VIEW', 'EXPORT'].map(a => (
-              <SelectItem key={a} value={a}>{a}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <Select value={actionFilter} onValueChange={setActionFilter}>
+            <SelectTrigger className="w-[140px]"><SelectValue placeholder="Action" /></SelectTrigger>
+            <SelectContent>
+              {['All', 'CREATE', 'UPDATE', 'DELETE', 'VIEW', 'EXPORT'].map(a => (
+                <SelectItem key={a} value={a}>{a}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {hasPermission('canExport') && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  <Download className="w-4 h-4 mr-2" /> Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleExport('csv')}>Export as CSV</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport('pdf')}>Export as PDF</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
       </div>
 
       <p className="text-sm text-muted-foreground">{filtered.length} log entries</p>
@@ -88,7 +136,7 @@ export default function AuditLogs() {
                 {filtered.map(log => (
                   <TableRow key={log.id}>
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                      {log.created_date ? format(parseISO(log.created_date), 'MMM d, HH:mm') : 'N/A'}
+                      {log.created_at ? format(parseISO(log.created_at), 'MMM d, HH:mm') : 'N/A'}
                     </TableCell>
                     <TableCell>
                       <span className={`px-2 py-0.5 rounded text-xs font-medium border ${actionStyles[log.action_type] || ''}`}>

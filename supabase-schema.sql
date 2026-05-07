@@ -154,6 +154,32 @@ BEGIN
 END;
 $$;
 
+-- ─── user_roles ───────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS user_roles (
+  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id           UUID NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+  email             TEXT NOT NULL UNIQUE,
+  role              TEXT NOT NULL DEFAULT 'user',
+  assigned_by       UUID REFERENCES auth.users(id),
+  assigned_at       TIMESTAMPTZ DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── app_settings ──────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS app_settings (
+  id                         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  setting_key                TEXT UNIQUE NOT NULL,
+  setting_value              JSONB NOT NULL,
+  description                TEXT,
+  updated_by                 UUID REFERENCES auth.users(id),
+  updated_at                 TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Seed default settings
+INSERT INTO app_settings (setting_key, setting_value, description) VALUES
+('work_schedule', '{"start_time": "09:00", "end_time": "17:00", "late_threshold_minutes": 15}', 'Standard company work schedule'),
+('reminders', '{"salary_reminder_days": 5, "birthday_reminder_days": 30, "confirmation_reminder_days": 60}', 'HR and Finance reminder thresholds')
+ON CONFLICT (setting_key) DO NOTHING;
 -- ─── Row Level Security (RLS) ──────────────────────────────
 -- Enable RLS on all tables
 ALTER TABLE staff_profiles        ENABLE ROW LEVEL SECURITY;
@@ -161,38 +187,41 @@ ALTER TABLE staff_bank_details    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE staff_documents       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE daily_workflow_reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_roles            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app_settings          ENABLE ROW LEVEL SECURITY;
 
--- POLICY: Authenticated users can read all records
--- (Fine-grained access enforced at application layer via useRoleAccess)
-CREATE POLICY "authenticated_read_staff_profiles"
+-- Helper function to check if user is admin
+CREATE OR REPLACE FUNCTION is_admin() 
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM user_roles 
+    WHERE user_id = auth.uid() 
+    AND role IN ('admin', 'super_admin')
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Staff Profiles Policies
+CREATE POLICY "Profiles are viewable by everyone authenticated"
   ON staff_profiles FOR SELECT TO authenticated USING (true);
 
-CREATE POLICY "authenticated_write_staff_profiles"
-  ON staff_profiles FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Profiles can be created by admins"
+  ON staff_profiles FOR INSERT TO authenticated WITH CHECK (is_admin());
 
-CREATE POLICY "authenticated_read_bank_details"
-  ON staff_bank_details FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Profiles can be updated by admins or owners"
+  ON staff_profiles FOR UPDATE TO authenticated 
+  USING (is_admin() OR auth.uid()::text = user_id)
+  WITH CHECK (is_admin() OR auth.uid()::text = user_id);
 
-CREATE POLICY "authenticated_write_bank_details"
-  ON staff_bank_details FOR ALL TO authenticated USING (true) WITH CHECK (true);
+-- user_roles Policies
+CREATE POLICY "Roles are viewable by admins"
+  ON user_roles FOR SELECT TO authenticated USING (is_admin());
 
-CREATE POLICY "authenticated_read_documents"
-  ON staff_documents FOR SELECT TO authenticated USING (true);
-
-CREATE POLICY "authenticated_write_documents"
-  ON staff_documents FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-CREATE POLICY "authenticated_read_workflow"
-  ON daily_workflow_reports FOR SELECT TO authenticated USING (true);
-
-CREATE POLICY "authenticated_write_workflow"
-  ON daily_workflow_reports FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-CREATE POLICY "authenticated_read_audit_logs"
-  ON audit_logs FOR SELECT TO authenticated USING (true);
-
-CREATE POLICY "authenticated_write_audit_logs"
-  ON audit_logs FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Roles can be managed by super_admins"
+  ON user_roles FOR ALL TO authenticated 
+  USING (EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role = 'super_admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role = 'super_admin'));
 
 -- ─── Storage bucket for staff documents ───────────────────
 -- Run this separately in Supabase dashboard > Storage > New bucket

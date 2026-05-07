@@ -1,9 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { entities } from '@/lib/supabaseEntities';
-import { useAuth } from '@/lib/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Search, Plus, DollarSign, Edit } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Search, Plus, DollarSign, Edit, Download } from 'lucide-react';
+import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,11 +10,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import EmptyState from '@/components/ui/EmptyState';
 import { PageLoader } from '@/components/ui/LoadingSpinner';
 import { toast } from 'sonner';
 import useRoleAccess from '@/lib/useRoleAccess';
 import useAuditLog from '@/lib/useAuditLog';
+import { exportToCSV, exportToPDF } from '@/lib/exportUtils';
 
 export default function SalaryManagement() {
   const queryClient = useQueryClient();
@@ -33,13 +34,13 @@ export default function SalaryManagement() {
 
   const { data: bankRecords = [], isLoading } = useQuery({
     queryKey: ['bank-details'],
-    queryFn: () => entities.StaffBankDetails.list('-created_date', 200),
+    queryFn: () => entities.StaffBankDetails.list('-created_at', 200),
     enabled: hasPermission('canViewSalary'),
   });
 
   const { data: staffList = [] } = useQuery({
     queryKey: ['staff-profiles'],
-    queryFn: () => entities.StaffProfile.list('-created_date', 200),
+    queryFn: () => entities.StaffProfile.list('-created_at', 200),
   });
 
   const saveMutation = useMutation({
@@ -65,6 +66,36 @@ export default function SalaryManagement() {
       return !search || b.staff_name?.toLowerCase().includes(search.toLowerCase()) || b.bank_name?.toLowerCase().includes(search.toLowerCase());
     });
   }, [bankRecords, search]);
+
+  const handleExport = async (format) => {
+    const dataToExport = filtered.map(b => ({
+      Staff: b.staff_name,
+      Bank: b.bank_name,
+      Account_No: b.account_number,
+      Account_Name: b.account_name,
+      Amount: b.salary_amount,
+      Currency: b.salary_currency,
+      Payment_Date: `${b.salary_payment_date}th`,
+      Frequency: b.payment_frequency
+    }));
+
+    if (format === 'csv') {
+      exportToCSV(dataToExport, 'Salary_Bank_Details');
+    } else {
+      exportToPDF(dataToExport, { 
+        title: 'Salary & Bank Details Report', 
+        filename: 'Salary_Bank_Details',
+        headers: ['Staff', 'Bank', 'Account_No', 'Account_Name', 'Amount', 'Currency', 'Payment_Date', 'Frequency']
+      });
+    }
+
+    await logAction({
+      actionType: 'EXPORT',
+      entityType: 'StaffBankDetails',
+      notes: `Exported ${filtered.length} salary records as ${format.toUpperCase()}`
+    });
+    toast.success(`Exported as ${format.toUpperCase()}`);
+  };
 
   const openEdit = (record) => {
     setForm(record);
@@ -98,11 +129,26 @@ export default function SalaryManagement() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input placeholder="Search by staff name or bank..." value={search} onChange={e => setSearch(e.target.value)} className="pl-10" />
         </div>
-        {hasPermission('canEditSalary') && (
-          <Button onClick={openNew} className="gradient-primary text-primary-foreground">
-            <Plus className="w-4 h-4 mr-2" /> Add Bank Details
-          </Button>
-        )}
+        <div className="flex gap-2">
+          {hasPermission('canExport') && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  <Download className="w-4 h-4 mr-2" /> Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleExport('csv')}>Export as CSV</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport('pdf')}>Export as PDF</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          {hasPermission('canEditSalary') && (
+            <Button onClick={openNew} className="gradient-primary text-primary-foreground">
+              <Plus className="w-4 h-4 mr-2" /> Add Bank Details
+            </Button>
+          )}
+        </div>
       </div>
 
       {filtered.length === 0 ? (

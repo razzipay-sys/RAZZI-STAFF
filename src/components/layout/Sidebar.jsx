@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -8,14 +8,12 @@ import {
   Settings, 
   ChevronLeft,
   ChevronRight,
-  Building2,
   DollarSign,
   Calendar,
   BarChart3,
   Shield,
   Lightbulb,
-  LogOut,
-  Menu
+  LogOut
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -23,6 +21,7 @@ import { cn } from '@/lib/utils';
 import { entities } from '@/lib/supabaseEntities';
 import { useAuth } from '@/lib/AuthContext';
 import useRoleAccess from '@/lib/useRoleAccess';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import logo from '@/assets/logo.jpeg';
 
 const navItems = [
@@ -75,6 +74,12 @@ const navItems = [
     permission: 'canViewAuditLogs'
   },
   { 
+    title: 'Access Control', 
+    icon: Shield, 
+    href: '/access-control',
+    permission: 'canManageRoles'
+  },
+  { 
     title: 'Recommendations', 
     icon: Lightbulb, 
     href: '/recommendations',
@@ -90,11 +95,32 @@ const navItems = [
 
 export default function Sidebar({ collapsed, setCollapsed, className }) {
   const location = useLocation();
-  const { hasPermission, user, isAdmin } = useRoleAccess();
+  const { user } = useAuth();
+  const { hasPermission, role, isAdmin } = useRoleAccess();
+
+  // Fetch staff profile for avatar and full name
+  const { data: staffProfile } = useQuery({
+    queryKey: ['my-profile', user?.email],
+    queryFn: async () => {
+      if (!user?.email) return null;
+      const profiles = await entities.StaffProfile.filter({ email: user.email });
+      return profiles[0] || null;
+    },
+    enabled: !!user?.email,
+  });
+
+  const getInitials = (name, email) => {
+    if (name) return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+    if (email) return email.slice(0, 2).toUpperCase();
+    return 'U';
+  };
+
+  const displayName = staffProfile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
+  const avatarUrl = staffProfile?.profile_photo_url || user?.user_metadata?.avatar_url;
 
   const filteredNavItems = navItems.filter(item => {
     if (!item.permission) return true;
-    if (isAdmin()) return true;
+    if (isAdmin) return true;
     return hasPermission(item.permission);
   });
 
@@ -158,10 +184,17 @@ export default function Sidebar({ collapsed, setCollapsed, className }) {
         {/* User Section */}
         <div className="border-t border-sidebar-border p-4">
           {!collapsed && user && (
-            <div className="mb-3 px-2">
-              <p className="text-xs text-sidebar-foreground/50">Signed in as</p>
-              <p className="text-sm font-medium text-sidebar-foreground truncate">{user.email}</p>
-              <p className="text-xs text-sidebar-primary capitalize">{user.role?.replace('_', ' ')}</p>
+            <div className="mb-3 px-2 flex items-center gap-3">
+              <Avatar className="h-8 w-8">
+                <AvatarImage src={avatarUrl} />
+                <AvatarFallback className="bg-primary/20 text-primary text-[10px] font-bold">
+                  {getInitials(displayName, user.email)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-sidebar-foreground truncate">{displayName}</p>
+                <p className="text-[10px] text-sidebar-primary capitalize">{role?.replace('_', ' ')}</p>
+              </div>
             </div>
           )}
           <Button
