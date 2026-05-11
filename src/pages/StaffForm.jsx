@@ -273,7 +273,7 @@ export default function StaffForm() {
   if (isLoading && editId) return <PageLoader />;
 
   return (
-    <div className="max-w-4xl mx-auto animate-fade-in">
+    <div className="max-w-4xl mx-auto animate-fade-in pb-28">
       <Button variant="ghost" onClick={() => navigate(-1)} className="mb-4">
         <ArrowLeft className="w-4 h-4 mr-2" /> Back
       </Button>
@@ -490,11 +490,22 @@ export default function StaffForm() {
           </TabsContent>
         </Tabs>
 
-        <div className="flex justify-end gap-3 mt-6">
-          <Button type="button" variant="outline" onClick={() => navigate(-1)}>Cancel</Button>
-          <Button type="button" onClick={validateAndSave} disabled={mutation.isPending} className="gradient-primary text-primary-foreground">
-            <Save className="w-4 h-4 mr-2" /> {mutation.isPending ? 'Saving...' : (editId ? 'Update Profile' : 'Create Profile')}
-          </Button>
+        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <div className="max-w-4xl mx-auto px-4 py-3 md:px-6">
+            <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
+              <Button type="button" variant="outline" onClick={() => navigate(-1)} disabled={mutation.isPending}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={validateAndSave}
+                disabled={mutation.isPending}
+                className="gradient-primary text-primary-foreground w-full sm:w-auto"
+              >
+                <Save className="w-4 h-4 mr-2" /> {mutation.isPending ? 'Saving...' : (editId ? 'Update Profile' : 'Create Profile')}
+              </Button>
+            </div>
+          </div>
         </div>
       </form>
     </div>
