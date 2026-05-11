@@ -47,10 +47,29 @@ export default function Documents() {
         notes: `Document status changed to ${status}`
       });
     },
+    onMutate: async ({ docId, status }) => {
+      await queryClient.cancelQueries({ queryKey: ['all-documents'] });
+      const previous = queryClient.getQueryData(['all-documents']);
+
+      queryClient.setQueryData(['all-documents'], (current) => {
+        const list = Array.isArray(current) ? current : [];
+        return list.map(d => (d.id === docId ? { ...d, status } : d));
+      });
+
+      return { previous };
+    },
+    onError: (err, _variables, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['all-documents'], context.previous);
+      }
+      toast.error(err?.message || 'Failed to update status');
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['all-documents'] });
       toast.success('Status updated');
-    }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['all-documents'] });
+    },
   });
 
   const filtered = useMemo(() => {
@@ -169,7 +188,7 @@ export default function Documents() {
                           </a>
                         )}
                         {(isAdmin || hasPermission('canEditDocuments')) && (
-                          <Select defaultValue={doc.status} onValueChange={v => updateStatus.mutate({ docId: doc.id, status: v, staffName: doc.staff_name })}>
+                          <Select value={doc.status || 'Pending'} onValueChange={v => updateStatus.mutate({ docId: doc.id, status: v, staffName: doc.staff_name })}>
                             <SelectTrigger className="w-32 h-8 text-xs"><SelectValue /></SelectTrigger>
                             <SelectContent>
                               {['Pending', 'Submitted', 'Reviewed', 'Requires Update', 'Approved', 'Rejected'].map(s => (

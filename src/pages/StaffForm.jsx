@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { PageLoader } from '@/components/ui/LoadingSpinner';
 import useAuditLog from '@/lib/useAuditLog';
 import useRoleAccess from '@/lib/useRoleAccess';
+import supabase from '@/lib/supabase';
 
 const DEPARTMENTS = ['Engineering', 'Finance', 'Operations', 'HR', 'Marketing', 'Sales', 'Customer Support', 'Legal', 'Product', 'Executive'];
 const EMPLOYMENT_TYPES = ['Full-time', 'Part-time', 'Contract', 'Intern', 'Probation'];
@@ -23,7 +24,7 @@ const EMPLOYMENT_STATUSES = ['Active', 'Suspended', 'Resigned', 'Terminated', 'O
 
 const emptyForm = {
   full_name: '', email: '', phone: '', staff_id: '', department: '', role: '',
-  employment_type: '', work_mode: '', address: '', emergency_contact_name: '',
+  system_role: '', employment_type: '', work_mode: '', address: '', emergency_contact_name: '',
   emergency_contact_phone: '', next_of_kin_name: '', next_of_kin_phone: '',
   next_of_kin_relationship: '', date_of_birth: '', date_joined: '',
   first_employment_date: '', confirmation_status: 'Pending', confirmation_date: '',
@@ -35,7 +36,7 @@ export default function StaffForm() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { logAction } = useAuditLog();
-  const { isAdmin, isSuperAdmin, hasPermission } = useRoleAccess();
+  const { role: currentUserRole, isSuperAdmin, hasPermission } = useRoleAccess();
   const urlParams = new URLSearchParams(window.location.search);
   const editId = urlParams.get('edit');
 
@@ -48,6 +49,20 @@ export default function StaffForm() {
     enabled: !!editId,
   });
 
+  const { data: userRole } = useQuery({
+    queryKey: ['user-role', existingStaff?.[0]?.email],
+    queryFn: async () => {
+      if (!existingStaff?.[0]?.email) return null;
+      const { data } = await supabase
+        .from('user_roles')
+        .select('role')
+        .ilike('email', existingStaff[0].email)
+        .maybeSingle();
+      return data?.role || null;
+    },
+    enabled: !!editId && !!existingStaff?.[0]?.email,
+  });
+
   // Get the latest staff to generate the next ID
   const { data: allStaff = [] } = useQuery({
     queryKey: ['staff-profiles', 'latest'],
@@ -57,9 +72,12 @@ export default function StaffForm() {
 
   useEffect(() => {
     if (existingStaff && existingStaff[0]) {
-      setForm(existingStaff[0]);
+      setForm(prev => ({ 
+        ...existingStaff[0], 
+        system_role: userRole || prev.system_role 
+      }));
     }
-  }, [existingStaff]);
+  }, [existingStaff, userRole]);
 
   const generateStaffId = () => {
     const lastStaff = allStaff[0];
@@ -73,10 +91,79 @@ export default function StaffForm() {
     return `RP-${nextNum.toString().padStart(4, '0')}`;
   };
 
+  const isMissingCreatedAt = (error) =>
+    error?.message?.includes('user_roles.created_at') || error?.message?.includes('created_at');
+
+  async function insertUserRole(record) {
+    const { error } = await supabase.from('user_roles').insert(record);
+    if (!error) return;
+
+    if (isMissingCreatedAt(error)) {
+      const { created_at: _createdAt, ...legacyRecord } = record;
+      const fallback = await supabase.from('user_roles').insert(legacyRecord);
+      if (!fallback.error) return;
+      throw fallback.error;
+    }
+
+    throw error;
+  }
+
+  async function setSystemRoleForEmail(email, nextRole, userId) {
+    const normalizedEmail = email?.trim().toLowerCase();
+    if (!normalizedEmail) return;
+
+    const { data: existing, error: fetchError } = await supabase
+      .from('user_roles')
+      .select('id, role, assigned_at, user_id')
+      .ilike('email', normalizedEmail)
+      .maybeSingle();
+
+    if (fetchError) throw fetchError;
+
+    if (nextRole === 'super_admin' && !isSuperAdmin) {
+      throw new Error('Only Super Admins can assign the Super Admin role');
+    }
+    if (existing?.role === 'super_admin' && !isSuperAdmin) {
+      throw new Error('Only Super Admins can change a Super Admin role');
+    }
+
+    if (existing?.id) {
+      const { error } = await supabase
+        .from('user_roles')
+        .update({
+          user_id: userId || existing.user_id || null,
+          email: normalizedEmail,
+          role: nextRole,
+          assigned_by: currentUserRole,
+          assigned_at: existing.assigned_at || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id);
+      if (error) throw error;
+      return;
+    }
+
+    await insertUserRole({
+      user_id: userId || null,
+      email: normalizedEmail,
+      role: nextRole,
+      assigned_by: currentUserRole,
+      assigned_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  }
+
   const mutation = useMutation({
     mutationFn: async (data) => {
       if (editId) {
         await entities.StaffProfile.update(editId, data);
+        
+        // Update system role if changed and user has permission
+        if (hasPermission('canManageRoles') && data.system_role && data.email) {
+          await setSystemRoleForEmail(data.email, data.system_role, data.user_id);
+        }
+        
         await logAction({
           actionType: 'UPDATE', entityType: 'StaffProfile',
           entityId: editId, entityName: data.full_name,
@@ -89,6 +176,12 @@ export default function StaffForm() {
           staff_id: generateStaffId()
         };
         const result = await entities.StaffProfile.create(finalData);
+        
+        // Assign system role if provided and user has permission
+        if (hasPermission('canManageRoles') && data.system_role && data.email) {
+          await setSystemRoleForEmail(data.email, data.system_role, data.user_id);
+        }
+        
         await logAction({
           actionType: 'CREATE', entityType: 'StaffProfile',
           entityId: result?.id, entityName: data.full_name,
@@ -99,11 +192,12 @@ export default function StaffForm() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['staff-profiles'] });
       queryClient.invalidateQueries({ queryKey: ['staff-profiles', 'latest'] });
+      queryClient.invalidateQueries({ queryKey: ['user-roles-list'] });
       toast.success(editId ? 'Staff profile updated' : 'Staff profile created');
       navigate('/staff');
     },
     onError: (error) => {
-      toast.error('Failed to save staff profile');
+      toast.error(error?.message || 'Failed to save staff profile');
     }
   });
 
@@ -197,7 +291,7 @@ export default function StaffForm() {
                 </div>
                 <div className="space-y-2">
                   <Label>Role/Position *</Label>
-                  <Input value={form.role} onChange={e => updateField('role', e.target.value)} />
+                  <Input value={form.role} onChange={e => updateField('role', e.target.value)} required />
                 </div>
                 <div className="space-y-2">
                   <Label>Employment Type</Label>
@@ -234,7 +328,7 @@ export default function StaffForm() {
                 {hasPermission('canManageRoles') && (
                   <div className="space-y-2">
                     <Label>System Role</Label>
-                    <Select value={form.role} onValueChange={v => updateField('role', v)}>
+                    <Select value={form.system_role} onValueChange={v => updateField('system_role', v)}>
                       <SelectTrigger><SelectValue placeholder="Assign a role" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="user">Staff (Default)</SelectItem>

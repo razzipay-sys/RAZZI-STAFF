@@ -50,6 +50,13 @@ export default function SalaryManagement() {
 
   const saveMutation = useMutation({
     mutationFn: async (data) => {
+      if (!data.staff_id) {
+        throw new Error('Select a staff member');
+      }
+      if (!data.bank_name || !data.account_number || !data.account_name) {
+        throw new Error('Please fill in all required bank fields');
+      }
+
       const staffMatch = staffList.find(s => s.staff_id === data.staff_id);
       const finalData = {
         ...data,
@@ -81,7 +88,10 @@ export default function SalaryManagement() {
       toast.success(editId ? 'Bank details updated' : 'Bank details created');
       setDialogOpen(false);
       setEditId(null);
-    }
+    },
+    onError: (err) => {
+      toast.error(err?.message || 'Failed to save bank details');
+    },
   });
 
   const filtered = useMemo(() => {
