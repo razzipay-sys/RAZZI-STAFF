@@ -22,6 +22,17 @@ const WORK_MODES = ['On-site', 'Remote', 'Hybrid'];
 const CONFIRMATION_STATUSES = ['Pending', 'Confirmed', 'Extended', 'Not Applicable'];
 const EMPLOYMENT_STATUSES = ['Active', 'Suspended', 'Resigned', 'Terminated', 'On Leave'];
 
+const REQUEST_TIMEOUT_MS = 15000;
+
+const withTimeout = (promise, timeoutMs) => (
+  Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Request timed out. Please try again.')), timeoutMs);
+    })
+  ])
+);
+
 const normalizeForDb = (record) => {
   const out = { ...(record || {}) };
   Object.keys(out).forEach((key) => {
@@ -168,11 +179,17 @@ export default function StaffForm() {
       const normalizedStaffProfileData = normalizeForDb(staffProfileData);
 
       if (editId) {
-        await entities.StaffProfile.update(editId, normalizedStaffProfileData);
+        await withTimeout(
+          entities.StaffProfile.update(editId, normalizedStaffProfileData),
+          REQUEST_TIMEOUT_MS
+        );
         
         // Update system role if changed and user has permission
         if (hasPermission('canManageRoles') && desiredSystemRole && normalizedStaffProfileData.email) {
-          await setSystemRoleForEmail(normalizedStaffProfileData.email, desiredSystemRole, normalizedStaffProfileData.user_id);
+          await withTimeout(
+            setSystemRoleForEmail(normalizedStaffProfileData.email, desiredSystemRole, normalizedStaffProfileData.user_id),
+            REQUEST_TIMEOUT_MS
+          );
         }
         
         await logAction({
@@ -186,11 +203,17 @@ export default function StaffForm() {
           ...normalizedStaffProfileData,
           staff_id: generateStaffId()
         };
-        const result = await entities.StaffProfile.create(finalData);
+        const result = await withTimeout(
+          entities.StaffProfile.create(finalData),
+          REQUEST_TIMEOUT_MS
+        );
         
         // Assign system role if provided and user has permission
         if (hasPermission('canManageRoles') && desiredSystemRole && finalData.email) {
-          await setSystemRoleForEmail(finalData.email, desiredSystemRole, finalData.user_id);
+          await withTimeout(
+            setSystemRoleForEmail(finalData.email, desiredSystemRole, finalData.user_id),
+            REQUEST_TIMEOUT_MS
+          );
         }
         
         await logAction({
