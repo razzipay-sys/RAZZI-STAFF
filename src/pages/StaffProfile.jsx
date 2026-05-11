@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import {
-  ArrowLeft, Edit, Mail, Phone, Shield, FileText, Eye, Download, Plus
+  ArrowLeft, Edit, Mail, Phone, Shield, FileText, Eye, Download, Plus, IdCard
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -23,7 +23,7 @@ import useTimedLoading from '@/hooks/useTimedLoading';
 import { toast } from 'sonner';
 import useRoleAccess from '@/lib/useRoleAccess';
 import useAuditLog from '@/lib/useAuditLog';
-import { exportToCSV, exportToPDF } from '@/lib/exportUtils';
+import { exportToCSV, exportToPDF, exportIDCardToPDF } from '@/lib/exportUtils';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 export default function StaffProfile() {
@@ -121,7 +121,7 @@ export default function StaffProfile() {
       Department: staff.department,
       Role: staff.role,
       Joined: staff.date_joined,
-      Address: staff.residential_address,
+      Address: staff.address,
       Emergency_Contact: staff.emergency_contact_name,
       Emergency_Phone: staff.emergency_contact_phone
     }];
@@ -144,6 +144,22 @@ export default function StaffProfile() {
       notes: `Exported staff profile as ${format.toUpperCase()}`
     });
     toast.success(`Exported as ${format.toUpperCase()}`);
+  };
+
+  const handleGenerateIdCard = async () => {
+    try {
+      await exportIDCardToPDF(staff, { filename: `ID_Card_${staff.staff_id}` });
+      await logAction({
+        actionType: 'EXPORT',
+        entityType: 'StaffProfile',
+        entityId: id,
+        entityName: staff.full_name,
+        notes: 'Generated staff ID card',
+      });
+      toast.success('ID card generated');
+    } catch (err) {
+      toast.error(err?.message || 'Failed to generate ID card');
+    }
   };
 
   if (showLoader) return <PageLoader />;
@@ -198,6 +214,11 @@ export default function StaffProfile() {
               </div>
             </div>
             <div className="flex flex-col sm:flex-row gap-2">
+              {hasPermission('canExport') && (
+                <Button variant="outline" onClick={handleGenerateIdCard}>
+                  <IdCard className="w-4 h-4 mr-2" /> ID Card
+                </Button>
+              )}
               {hasPermission('canExport') && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>

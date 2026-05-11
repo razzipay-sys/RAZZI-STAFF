@@ -22,7 +22,7 @@ import DataState from '@/components/ui/DataState';
 import useTimedLoading from '@/hooks/useTimedLoading';
 import useRoleAccess from '@/lib/useRoleAccess';
 import useAuditLog from '@/lib/useAuditLog';
-import { exportToCSV, exportToPDF } from '@/lib/exportUtils';
+import { exportToCSV, exportToPDF, exportIDCardsToPDF } from '@/lib/exportUtils';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 
@@ -103,6 +103,20 @@ export default function StaffDirectory() {
     toast.success(`Exported as ${format.toUpperCase()}`);
   };
 
+  const handleIdCardsExport = async () => {
+    try {
+      await exportIDCardsToPDF(filtered, { filename: 'Staff_ID_Cards' });
+      await logAction({
+        actionType: 'EXPORT',
+        entityType: 'StaffProfile',
+        notes: `Generated ID cards for ${filtered.length} staff members`,
+      });
+      toast.success('ID cards generated');
+    } catch (err) {
+      toast.error(err?.message || 'Failed to generate ID cards');
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       {(isError || timedOut) && (
@@ -134,6 +148,7 @@ export default function StaffDirectory() {
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={() => handleExport('csv')}>Export as CSV</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleExport('pdf')}>Export as PDF</DropdownMenuItem>
+                <DropdownMenuItem onClick={handleIdCardsExport}>Generate ID Cards (PDF)</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           )}
