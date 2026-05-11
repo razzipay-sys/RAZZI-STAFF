@@ -22,6 +22,14 @@ const WORK_MODES = ['On-site', 'Remote', 'Hybrid'];
 const CONFIRMATION_STATUSES = ['Pending', 'Confirmed', 'Extended', 'Not Applicable'];
 const EMPLOYMENT_STATUSES = ['Active', 'Suspended', 'Resigned', 'Terminated', 'On Leave'];
 
+const normalizeForDb = (record) => {
+  const out = { ...(record || {}) };
+  Object.keys(out).forEach((key) => {
+    if (out[key] === '') out[key] = null;
+  });
+  return out;
+};
+
 const emptyForm = {
   full_name: '', email: '', phone: '', staff_id: '', department: '', role: '',
   system_role: '', employment_type: '', work_mode: '', address: '', emergency_contact_name: '',
@@ -156,35 +164,38 @@ export default function StaffForm() {
 
   const mutation = useMutation({
     mutationFn: async (data) => {
+      const { system_role: desiredSystemRole, ...staffProfileData } = data || {};
+      const normalizedStaffProfileData = normalizeForDb(staffProfileData);
+
       if (editId) {
-        await entities.StaffProfile.update(editId, data);
+        await entities.StaffProfile.update(editId, normalizedStaffProfileData);
         
         // Update system role if changed and user has permission
-        if (hasPermission('canManageRoles') && data.system_role && data.email) {
-          await setSystemRoleForEmail(data.email, data.system_role, data.user_id);
+        if (hasPermission('canManageRoles') && desiredSystemRole && normalizedStaffProfileData.email) {
+          await setSystemRoleForEmail(normalizedStaffProfileData.email, desiredSystemRole, normalizedStaffProfileData.user_id);
         }
         
         await logAction({
           actionType: 'UPDATE', entityType: 'StaffProfile',
-          entityId: editId, entityName: data.full_name,
+          entityId: editId, entityName: normalizedStaffProfileData.full_name,
           notes: 'Staff profile updated'
         });
       } else {
         // Auto-generate Staff ID for new profiles
         const finalData = {
-          ...data,
+          ...normalizedStaffProfileData,
           staff_id: generateStaffId()
         };
         const result = await entities.StaffProfile.create(finalData);
         
         // Assign system role if provided and user has permission
-        if (hasPermission('canManageRoles') && data.system_role && data.email) {
-          await setSystemRoleForEmail(data.email, data.system_role, data.user_id);
+        if (hasPermission('canManageRoles') && desiredSystemRole && finalData.email) {
+          await setSystemRoleForEmail(finalData.email, desiredSystemRole, finalData.user_id);
         }
         
         await logAction({
           actionType: 'CREATE', entityType: 'StaffProfile',
-          entityId: result?.id, entityName: data.full_name,
+          entityId: result?.id, entityName: finalData.full_name,
           notes: `New staff profile created with ID: ${finalData.staff_id}`
         });
       }
@@ -233,7 +244,7 @@ export default function StaffForm() {
         <ArrowLeft className="w-4 h-4 mr-2" /> Back
       </Button>
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} noValidate>
         <Tabs defaultValue="basic" className="space-y-6">
           <div className="overflow-x-auto pb-2 -mx-2 px-2 md:mx-0 md:px-0">
             <TabsList className="bg-muted p-1 rounded-lg inline-flex w-max md:w-full">
