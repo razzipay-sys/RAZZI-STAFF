@@ -179,7 +179,7 @@ export default function StaffForm() {
       const normalizedStaffProfileData = normalizeForDb(staffProfileData);
 
       if (editId) {
-        await withTimeout(
+        const updated = await withTimeout(
           entities.StaffProfile.update(editId, normalizedStaffProfileData),
           REQUEST_TIMEOUT_MS
         );
@@ -197,6 +197,7 @@ export default function StaffForm() {
           entityId: editId, entityName: normalizedStaffProfileData.full_name,
           notes: 'Staff profile updated'
         });
+        return updated;
       } else {
         // Auto-generate Staff ID for new profiles
         const finalData = {
@@ -221,13 +222,24 @@ export default function StaffForm() {
           entityId: result?.id, entityName: finalData.full_name,
           notes: `New staff profile created with ID: ${finalData.staff_id}`
         });
+        return result;
       }
     },
-    onSuccess: () => {
+    onSuccess: (updatedRecord) => {
       queryClient.invalidateQueries({ queryKey: ['staff-profiles'] });
       queryClient.invalidateQueries({ queryKey: ['staff-profiles', 'latest'] });
       queryClient.invalidateQueries({ queryKey: ['user-roles-list'] });
       toast.success(editId ? 'Staff profile updated' : 'Staff profile created');
+
+      if (editId && updatedRecord) {
+        setForm(prev => ({ ...prev, ...updatedRecord }));
+        queryClient.invalidateQueries({ queryKey: ['staff-profile', editId] });
+        if (updatedRecord.email) {
+          queryClient.invalidateQueries({ queryKey: ['user-role', updatedRecord.email] });
+        }
+        return;
+      }
+
       navigate('/staff');
     },
     onError: (error) => {
@@ -235,8 +247,7 @@ export default function StaffForm() {
     }
   });
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const validateAndSave = () => {
     if (!form.full_name || !form.email || !form.department || !form.role || !form.employment_status) {
       toast.error('Please fill in all required fields');
       return;
@@ -267,7 +278,7 @@ export default function StaffForm() {
         <ArrowLeft className="w-4 h-4 mr-2" /> Back
       </Button>
 
-      <form onSubmit={handleSubmit} noValidate>
+      <form onSubmit={(e) => { e.preventDefault(); validateAndSave(); }} noValidate>
         <Tabs defaultValue="basic" className="space-y-6">
           <div className="overflow-x-auto pb-2 -mx-2 px-2 md:mx-0 md:px-0">
             <TabsList className="bg-muted p-1 rounded-lg inline-flex w-max md:w-full">
@@ -481,8 +492,8 @@ export default function StaffForm() {
 
         <div className="flex justify-end gap-3 mt-6">
           <Button type="button" variant="outline" onClick={() => navigate(-1)}>Cancel</Button>
-          <Button type="submit" disabled={mutation.isPending} className="gradient-primary text-primary-foreground">
-            <Save className="w-4 h-4 mr-2" /> {editId ? 'Update Profile' : 'Create Profile'}
+          <Button type="button" onClick={validateAndSave} disabled={mutation.isPending} className="gradient-primary text-primary-foreground">
+            <Save className="w-4 h-4 mr-2" /> {mutation.isPending ? 'Saving...' : (editId ? 'Update Profile' : 'Create Profile')}
           </Button>
         </div>
       </form>
