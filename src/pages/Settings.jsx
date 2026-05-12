@@ -6,9 +6,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
-import { Save, User, Building2, Clock, Shield, Bell, Upload, Loader2 } from 'lucide-react';
+import { Save, User, Building2, Clock, Shield, Bell, Upload, Loader2, UserCog } from 'lucide-react';
 import useRoleAccess from '@/lib/useRoleAccess';
 import supabase from '@/lib/supabase';
 import useAuditLog from '@/lib/useAuditLog';
@@ -106,6 +108,66 @@ export default function Settings() {
 
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [uploading, setUploading] = useState(false);
+
+  // ── Profile form state (editable by the user themselves) ──────────────────
+  const PROFILE_DEFAULTS = {
+    full_name: '',
+    phone: '',
+    address: '',
+    date_of_birth: '',
+    emergency_contact_name: '',
+    emergency_contact_phone: '',
+    next_of_kin_name: '',
+    next_of_kin_phone: '',
+    next_of_kin_relationship: '',
+    staff_bio: '',
+  };
+  const [profileForm, setProfileForm] = useState(PROFILE_DEFAULTS);
+  const updateField = (key, value) => setProfileForm(prev => ({ ...prev, [key]: value }));
+
+  // Hydrate form when profile loads
+  useEffect(() => {
+    if (staffProfile) {
+      setProfileForm({
+        full_name: staffProfile.full_name || '',
+        phone: staffProfile.phone || '',
+        address: staffProfile.address || '',
+        date_of_birth: staffProfile.date_of_birth || '',
+        emergency_contact_name: staffProfile.emergency_contact_name || '',
+        emergency_contact_phone: staffProfile.emergency_contact_phone || '',
+        next_of_kin_name: staffProfile.next_of_kin_name || '',
+        next_of_kin_phone: staffProfile.next_of_kin_phone || '',
+        next_of_kin_relationship: staffProfile.next_of_kin_relationship || '',
+        staff_bio: staffProfile.staff_bio || '',
+      });
+    }
+  }, [staffProfile]);
+
+  const updateProfileMutation = useMutation({
+    mutationFn: async () => {
+      if (!staffProfile?.id) throw new Error('Profile not found. Please contact your administrator.');
+      const trimmed = Object.fromEntries(
+        Object.entries(profileForm).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v])
+      );
+      if (!trimmed.full_name) throw new Error('Full name is required.');
+      await entities.StaffProfile.update(staffProfile.id, trimmed);
+      await logAction({
+        actionType: 'PROFILE_UPDATE',
+        entityType: 'StaffProfile',
+        entityId: staffProfile.id,
+        entityName: trimmed.full_name,
+        notes: 'Staff updated their own profile',
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['my-profile', authUser?.email] });
+      toast.success('Profile updated successfully');
+    },
+    onError: (err) => {
+      console.error('[Settings] Profile update error:', err);
+      toast.error(err.message || 'Failed to update profile');
+    },
+  });
 
   useEffect(() => {
     if (dbSettings.length > 0) {
@@ -316,6 +378,151 @@ export default function Settings() {
                 </label>
               </Button>
             </div>
+          </div>
+        </div>
+      </Section>
+
+      {/* Update My Profile */}
+      <Section title="Update My Profile" icon={UserCog}>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="profile-full-name">Full Name <span className="text-destructive">*</span></Label>
+              <Input
+                id="profile-full-name"
+                value={profileForm.full_name}
+                onChange={e => updateField('full_name', e.target.value)}
+                placeholder="Your full name"
+                disabled={updateProfileMutation.isPending}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="profile-phone">Phone Number</Label>
+              <Input
+                id="profile-phone"
+                value={profileForm.phone}
+                onChange={e => updateField('phone', e.target.value)}
+                placeholder="+234 000 0000 000"
+                disabled={updateProfileMutation.isPending}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="profile-dob">Date of Birth</Label>
+              <Input
+                id="profile-dob"
+                type="date"
+                value={profileForm.date_of_birth}
+                onChange={e => updateField('date_of_birth', e.target.value)}
+                disabled={updateProfileMutation.isPending}
+              />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="profile-address">Residential Address</Label>
+              <Input
+                id="profile-address"
+                value={profileForm.address}
+                onChange={e => updateField('address', e.target.value)}
+                placeholder="Your current address"
+                disabled={updateProfileMutation.isPending}
+              />
+            </div>
+          </div>
+
+          <Separator />
+
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Emergency Contact</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="profile-emerg-name">Contact Name</Label>
+              <Input
+                id="profile-emerg-name"
+                value={profileForm.emergency_contact_name}
+                onChange={e => updateField('emergency_contact_name', e.target.value)}
+                placeholder="Emergency contact full name"
+                disabled={updateProfileMutation.isPending}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="profile-emerg-phone">Contact Phone</Label>
+              <Input
+                id="profile-emerg-phone"
+                value={profileForm.emergency_contact_phone}
+                onChange={e => updateField('emergency_contact_phone', e.target.value)}
+                placeholder="+234 000 0000 000"
+                disabled={updateProfileMutation.isPending}
+              />
+            </div>
+          </div>
+
+          <Separator />
+
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Next of Kin</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="profile-kin-name">Full Name</Label>
+              <Input
+                id="profile-kin-name"
+                value={profileForm.next_of_kin_name}
+                onChange={e => updateField('next_of_kin_name', e.target.value)}
+                placeholder="Next of kin name"
+                disabled={updateProfileMutation.isPending}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="profile-kin-phone">Phone</Label>
+              <Input
+                id="profile-kin-phone"
+                value={profileForm.next_of_kin_phone}
+                onChange={e => updateField('next_of_kin_phone', e.target.value)}
+                placeholder="+234 000 0000 000"
+                disabled={updateProfileMutation.isPending}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="profile-kin-rel">Relationship</Label>
+              <Input
+                id="profile-kin-rel"
+                value={profileForm.next_of_kin_relationship}
+                onChange={e => updateField('next_of_kin_relationship', e.target.value)}
+                placeholder="e.g. Spouse, Parent"
+                disabled={updateProfileMutation.isPending}
+              />
+            </div>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-1.5">
+            <Label htmlFor="profile-bio">Bio / About Me</Label>
+            <Textarea
+              id="profile-bio"
+              value={profileForm.staff_bio}
+              onChange={e => updateField('staff_bio', e.target.value)}
+              placeholder="A short bio about yourself, your skills, experience..."
+              rows={3}
+              className="resize-none"
+              disabled={updateProfileMutation.isPending}
+            />
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <Button
+              onClick={() => updateProfileMutation.mutate()}
+              disabled={updateProfileMutation.isPending || !staffProfile}
+              className="gradient-primary text-primary-foreground min-w-[160px]"
+            >
+              {updateProfileMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4 mr-2" />
+                  Update Profile
+                </>
+              )}
+            </Button>
           </div>
         </div>
       </Section>
