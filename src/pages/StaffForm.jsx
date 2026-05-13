@@ -61,6 +61,9 @@ export default function StaffForm() {
 
   const [form, setForm] = useState(emptyForm);
   const [skillInput, setSkillInput] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [saveMessage, setSaveMessage] = useState('');
 
   const { data: existingStaff, isLoading } = useQuery({
     queryKey: ['staff-profile', editId],
@@ -230,6 +233,9 @@ export default function StaffForm() {
       queryClient.invalidateQueries({ queryKey: ['staff-profiles', 'latest'] });
       queryClient.invalidateQueries({ queryKey: ['user-roles-list'] });
       toast.success(editId ? 'Staff profile updated' : 'Staff profile created');
+      setSaveError('');
+      setSaveMessage('Saved');
+      setTimeout(() => setSaveMessage(''), 2500);
 
       if (editId && updatedRecord) {
         setForm(prev => ({ ...prev, ...updatedRecord }));
@@ -242,16 +248,26 @@ export default function StaffForm() {
 
       navigate('/staff');
     },
+    onSettled: () => {
+      setIsSaving(false);
+    },
     onError: (error) => {
+      setSaveMessage('');
+      setSaveError(error?.message || 'Failed to save staff profile');
       toast.error(error?.message || 'Failed to save staff profile');
     }
   });
 
   const validateAndSave = () => {
     if (!form.full_name || !form.email || !form.department || !form.role || !form.employment_status) {
+      setSaveMessage('');
+      setSaveError('Please fill in all required fields');
       toast.error('Please fill in all required fields');
       return;
     }
+    setSaveError('');
+    setIsSaving(true);
+    mutation.reset();
     mutation.mutate(form);
   };
 
@@ -490,19 +506,25 @@ export default function StaffForm() {
           </TabsContent>
         </Tabs>
 
-        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="fixed bottom-0 left-0 right-0 z-[9999] pointer-events-auto border-t border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
           <div className="max-w-4xl mx-auto px-4 py-3 md:px-6">
+            {(saveError || saveMessage) && (
+              <div className="mb-2">
+                {saveError && <p className="text-sm font-medium text-destructive">{saveError}</p>}
+                {!saveError && saveMessage && <p className="text-sm font-medium text-primary">{saveMessage}</p>}
+              </div>
+            )}
             <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
-              <Button type="button" variant="outline" onClick={() => navigate(-1)} disabled={mutation.isPending}>
+              <Button type="button" variant="outline" onClick={() => navigate(-1)} disabled={isSaving}>
                 Cancel
               </Button>
               <Button
                 type="button"
                 onClick={validateAndSave}
-                disabled={mutation.isPending}
-                className="gradient-primary text-primary-foreground w-full sm:w-auto"
+                disabled={isSaving}
+                className="gradient-primary text-primary-foreground w-full sm:w-auto pointer-events-auto"
               >
-                <Save className="w-4 h-4 mr-2" /> {mutation.isPending ? 'Saving...' : (editId ? 'Update Profile' : 'Create Profile')}
+                <Save className="w-4 h-4 mr-2" /> {isSaving ? 'Saving...' : (editId ? 'Update Profile' : 'Create Profile')}
               </Button>
             </div>
           </div>
