@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS staff_profiles (
   full_name                   TEXT NOT NULL,
   email                       TEXT NOT NULL UNIQUE,
   phone                       TEXT,
-  department                  TEXT CHECK (department IN ('Engineering','Finance','Operations','HR','Marketing','Sales','Customer Support','Legal','Product','Executive')),
+  department                  TEXT CHECK (department IN ('Engineering','Finance','Operations','HR','IT','Marketing','Sales','Customer Support','Legal','Product','Executive')),
   role                        TEXT NOT NULL,
   employment_type             TEXT CHECK (employment_type IN ('Full-time','Part-time','Contract','Intern','Probation')),
   work_mode                   TEXT CHECK (work_mode IN ('On-site','Remote','Hybrid')),
@@ -42,6 +42,25 @@ CREATE TABLE IF NOT EXISTS staff_profiles (
   created_at                  TIMESTAMPTZ DEFAULT NOW(),
   updated_at                  TIMESTAMPTZ DEFAULT NOW()
 );
+
+DO $$
+BEGIN
+  IF to_regclass('public.staff_profiles') IS NOT NULL THEN
+    IF EXISTS (
+      SELECT 1
+      FROM pg_constraint
+      WHERE conname = 'staff_profiles_department_check'
+        AND conrelid = 'public.staff_profiles'::regclass
+    ) THEN
+      ALTER TABLE public.staff_profiles DROP CONSTRAINT staff_profiles_department_check;
+    END IF;
+
+    ALTER TABLE public.staff_profiles
+    ADD CONSTRAINT staff_profiles_department_check
+    CHECK (department IN ('Engineering','Finance','Operations','HR','IT','Marketing','Sales','Customer Support','Legal','Product','Executive'));
+  END IF;
+END
+$$;
 
 -- ─── staff_bank_details ────────────────────────────────────
 CREATE TABLE IF NOT EXISTS staff_bank_details (
