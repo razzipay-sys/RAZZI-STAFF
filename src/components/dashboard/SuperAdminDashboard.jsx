@@ -31,8 +31,7 @@ export default function SuperAdminDashboard() {
   const { data: userDocuments = [], isLoading: docsLoading } = useQuery({
     queryKey: ['pending-documents'],
     queryFn: async () => {
-      const docs = await entities.StaffDocument.list('-created_at', 500);
-      return docs.filter(d => !d.document_status || d.document_status === 'Pending');
+      return entities.StaffDocument.list('-created_at', 500);
     },
     staleTime: 5 * 60 * 1000,
   });
@@ -119,24 +118,28 @@ export default function SuperAdminDashboard() {
           value={pendingCVs} 
           icon={FileText}
           loading={docsTimed.showLoader}
+          to="/staff?missing_cv=1"
         />
         <StatCard 
           title="Pending Reviews" 
           value={pendingReview.length} 
           icon={AlertCircle}
           loading={reportsTimed.showLoader}
+          to="/workflow?review_status=Pending%20Review"
         />
         <StatCard 
           title="Due for Confirmation" 
           value={dueForConfirmation.length} 
           icon={FileCheck}
           loading={staffTimed.showLoader}
+          to="/staff?confirmation_status=Pending"
         />
         <StatCard 
           title="Incomplete Profiles" 
           value={incompleteProfiles.length} 
           icon={Clock}
           loading={staffTimed.showLoader}
+          to="/staff"
         />
       </div>
 

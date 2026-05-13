@@ -7,7 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
@@ -16,9 +15,7 @@ import useAuditLog from '@/lib/useAuditLog';
 import useRoleAccess from '@/lib/useRoleAccess';
 import supabase from '@/lib/supabase';
 
-const DEPARTMENTS = ['Engineering', 'Finance', 'Operations', 'HR', 'Marketing', 'Sales', 'Customer Support', 'Legal', 'Product', 'Executive'];
-const EMPLOYMENT_TYPES = ['Full-time', 'Part-time', 'Contract', 'Intern', 'Probation'];
-const WORK_MODES = ['On-site', 'Remote', 'Hybrid'];
+const DEPARTMENTS = ['Engineering', 'Finance', 'Operations', 'HR', 'IT', 'Marketing', 'Sales', 'Customer Support', 'Legal', 'Product', 'Executive'];
 const CONFIRMATION_STATUSES = ['Pending', 'Confirmed', 'Extended', 'Not Applicable'];
 const EMPLOYMENT_STATUSES = ['Active', 'Suspended', 'Resigned', 'Terminated', 'On Leave'];
 
@@ -75,14 +72,19 @@ export default function StaffForm() {
 
   const [form, setForm] = useState(emptyForm);
   const [originalForm, setOriginalForm] = useState(emptyForm);
-  const [skillInput, setSkillInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
+  const [cvFile, setCvFile] = useState(null);
 
   const isSavingRef = useRef(false);
   const lastSubmitAtRef = useRef(0);
+  const cvFileRef = useRef(null);
+
+  useEffect(() => {
+    cvFileRef.current = cvFile;
+  }, [cvFile]);
 
   const { data: existingStaff, isLoading } = useQuery({
     queryKey: ['staff-profile', editId],
@@ -155,6 +157,61 @@ export default function StaffForm() {
     }
     
     return `RP-${nextNum.toString().padStart(4, '0')}`;
+  };
+
+  const uploadCvForStaff = async (staffRecord) => {
+    const file = cvFileRef.current;
+    if (!file || !staffRecord?.staff_id) return null;
+
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${staffRecord.staff_id}/cv-${Date.now()}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('staff-documents')
+      .upload(fileName, file, { upsert: true });
+    if (uploadError) throw uploadError;
+
+    const { data: { publicUrl } } = supabase.storage.from('staff-documents').getPublicUrl(fileName);
+    const existingCvDocs = await entities.StaffDocument.filter({ staff_id: staffRecord.staff_id, document_type: 'CV' });
+    const existing = existingCvDocs?.[0];
+
+    if (existing?.id) {
+      await entities.StaffDocument.update(existing.id, {
+        staff_id: staffRecord.staff_id,
+        staff_name: staffRecord.full_name,
+        document_type: 'CV',
+        document_name: file.name,
+        document_url: publicUrl,
+        status: 'Submitted',
+      });
+      await logAction({
+        actionType: 'UPDATE',
+        entityType: 'StaffDocument',
+        entityId: existing.id,
+        entityName: staffRecord.full_name,
+        notes: 'CV updated via staff form',
+      });
+    } else {
+      const created = await entities.StaffDocument.create({
+        staff_id: staffRecord.staff_id,
+        staff_name: staffRecord.full_name,
+        document_type: 'CV',
+        document_name: file.name,
+        document_url: publicUrl,
+        status: 'Submitted',
+      });
+      await logAction({
+        actionType: 'CREATE',
+        entityType: 'StaffDocument',
+        entityId: created?.id,
+        entityName: staffRecord.full_name,
+        notes: 'CV uploaded via staff form',
+      });
+    }
+
+    setCvFile(null);
+    cvFileRef.current = null;
+    return publicUrl;
   };
 
   const isMissingCreatedAt = (error) =>
@@ -237,6 +294,8 @@ export default function StaffForm() {
           entities.StaffProfile.update(editId, normalizedStaffProfileData),
           REQUEST_TIMEOUT_MS
         );
+
+        await withTimeout(uploadCvForStaff(updated), REQUEST_TIMEOUT_MS);
         
         // Update system role if changed and user has permission
         if (hasPermission('canManageRoles') && desiredSystemRole && normalizedStaffProfileData.email) {
@@ -263,6 +322,8 @@ export default function StaffForm() {
           entities.StaffProfile.create(finalData),
           REQUEST_TIMEOUT_MS
         );
+
+        await withTimeout(uploadCvForStaff(result), REQUEST_TIMEOUT_MS);
         
         // Assign system role if provided and user has permission
         if (hasPermission('canManageRoles') && desiredSystemRole && finalData.email) {
@@ -332,16 +393,22 @@ export default function StaffForm() {
     if (!form.full_name) nextErrors.full_name = 'Full name is required';
     if (!form.email) nextErrors.email = 'Email is required';
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) nextErrors.email = 'Enter a valid email address';
+    if (!form.phone) nextErrors.phone = 'Phone number is required';
+    if (!form.date_of_birth) nextErrors.date_of_birth = 'Date of birth is required';
     if (!form.department) nextErrors.department = 'Department is required';
     if (!form.role) nextErrors.role = 'Role/Position is required';
+    if (!form.first_employment_date) nextErrors.first_employment_date = 'Date of employment is required';
+    if (!form.confirmation_status) nextErrors.confirmation_status = 'Confirmation status is required';
+    if (form.confirmation_status === 'Confirmed' && !form.confirmation_date) nextErrors.confirmation_date = 'Confirmation date is required';
     if (!form.employment_status) nextErrors.employment_status = 'Employment status is required';
+    if (!editId && !cvFileRef.current) nextErrors.cv = 'CV is required';
 
     setFieldErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
       setSaveMessage('');
       setSaveError('Please fix the highlighted fields');
       toast.error('Please fix the highlighted fields', { id: SAVE_TOAST_ID });
-      const order = ['full_name', 'email', 'department', 'role', 'employment_status'];
+      const order = ['full_name', 'email', 'phone', 'date_of_birth', 'department', 'role', 'first_employment_date', 'confirmation_status', 'confirmation_date', 'employment_status', 'cv'];
       const first = order.find(k => nextErrors[k]);
       if (first) {
         requestAnimationFrame(() => {
@@ -375,17 +442,6 @@ export default function StaffForm() {
     setSaveMessage('');
   };
 
-  const addSkill = () => {
-    if (skillInput.trim()) {
-      setForm(prev => ({ ...prev, skills: [...(prev.skills || []), skillInput.trim()] }));
-      setSkillInput('');
-    }
-  };
-
-  const removeSkill = (index) => {
-    setForm(prev => ({ ...prev, skills: prev.skills.filter((_, i) => i !== index) }));
-  };
-
   if (isLoading && editId) return <PageLoader />;
 
   return (
@@ -407,10 +463,7 @@ export default function StaffForm() {
             <TabsList className="bg-muted p-1 rounded-lg inline-flex w-max md:w-full">
               <TabsTrigger value="basic">Basic Info</TabsTrigger>
               <TabsTrigger value="employment">Employment</TabsTrigger>
-              <TabsTrigger value="company">Company Profile</TabsTrigger>
-              <TabsTrigger value="emergency">Emergency</TabsTrigger>
               <TabsTrigger value="dates">Dates</TabsTrigger>
-              <TabsTrigger value="notes">Notes</TabsTrigger>
             </TabsList>
           </div>
 
@@ -452,12 +505,29 @@ export default function StaffForm() {
                   {fieldErrors.email && <p className="text-xs text-destructive">{fieldErrors.email}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label>Phone</Label>
-                  <Input value={form.phone} onChange={e => updateField('phone', e.target.value)} />
+                  <Label htmlFor="field-phone">Phone Number *</Label>
+                  <Input
+                    id="field-phone"
+                    value={form.phone || ''}
+                    onChange={e => updateField('phone', e.target.value)}
+                    aria-invalid={!!fieldErrors.phone}
+                    className={fieldErrors.phone ? 'border-destructive focus-visible:ring-destructive' : undefined}
+                    required
+                  />
+                  {fieldErrors.phone && <p className="text-xs text-destructive">{fieldErrors.phone}</p>}
                 </div>
                 <div className="md:col-span-2 space-y-2">
-                  <Label>Residential Address</Label>
-                  <Textarea value={form.address} onChange={e => updateField('address', e.target.value)} rows={2} />
+                  <Label htmlFor="field-cv">CV *</Label>
+                  <Input
+                    id="field-cv"
+                    type="file"
+                    accept=".pdf,.doc,.docx"
+                    onChange={(e) => setCvFile(e.target.files?.[0] || null)}
+                    aria-invalid={!!fieldErrors.cv}
+                    className={fieldErrors.cv ? 'border-destructive focus-visible:ring-destructive' : undefined}
+                  />
+                  {fieldErrors.cv && <p className="text-xs text-destructive">{fieldErrors.cv}</p>}
+                  {editId && cvFile && <p className="text-xs text-muted-foreground">New CV selected: {cvFile.name}</p>}
                 </div>
               </CardContent>
             </Card>
@@ -494,20 +564,6 @@ export default function StaffForm() {
                   {fieldErrors.role && <p className="text-xs text-destructive">{fieldErrors.role}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label>Employment Type</Label>
-                  <Select value={form.employment_type} onValueChange={v => updateField('employment_type', v)}>
-                    <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
-                    <SelectContent>{EMPLOYMENT_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Work Mode</Label>
-                  <Select value={form.work_mode} onValueChange={v => updateField('work_mode', v)}>
-                    <SelectTrigger><SelectValue placeholder="Select mode" /></SelectTrigger>
-                    <SelectContent>{WORK_MODES.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
                   <Label htmlFor="field-employment_status">Employment Status *</Label>
                   <Select value={form.employment_status || ''} onValueChange={v => updateField('employment_status', v)}>
                     <SelectTrigger
@@ -522,15 +578,18 @@ export default function StaffForm() {
                   {fieldErrors.employment_status && <p className="text-xs text-destructive">{fieldErrors.employment_status}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label>Confirmation Status</Label>
-                  <Select value={form.confirmation_status} onValueChange={v => updateField('confirmation_status', v)}>
-                    <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
+                  <Label htmlFor="field-confirmation_status">Confirmation Status *</Label>
+                  <Select value={form.confirmation_status || ''} onValueChange={v => updateField('confirmation_status', v)}>
+                    <SelectTrigger
+                      id="field-confirmation_status"
+                      aria-invalid={!!fieldErrors.confirmation_status}
+                      className={fieldErrors.confirmation_status ? 'border-destructive focus-visible:ring-destructive' : undefined}
+                    >
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
                     <SelectContent>{CONFIRMATION_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                   </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Reporting Manager</Label>
-                  <Input value={form.manager_name} onChange={e => updateField('manager_name', e.target.value)} />
+                  {fieldErrors.confirmation_status && <p className="text-xs text-destructive">{fieldErrors.confirmation_status}</p>}
                 </div>
                 {hasPermission('canManageRoles') && (
                   <div className="space-y-2">
@@ -552,101 +611,48 @@ export default function StaffForm() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="company">
-            <Card>
-              <CardHeader><CardTitle>Company Profile</CardTitle></CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Staff Bio/Summary</Label>
-                  <Textarea value={form.staff_bio} onChange={e => updateField('staff_bio', e.target.value)} rows={3} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Skills & Competencies</Label>
-                  <div className="flex gap-2">
-                    <Input value={skillInput} onChange={e => setSkillInput(e.target.value)} placeholder="Add a skill" onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSkill(); }}} />
-                    <Button type="button" variant="outline" onClick={addSkill}>Add</Button>
-                  </div>
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {(form.skills || []).map((skill, i) => (
-                      <span key={i} className="px-3 py-1 text-xs rounded-full bg-primary/10 text-primary font-medium cursor-pointer hover:bg-destructive/10 hover:text-destructive transition-colors" onClick={() => removeSkill(i)}>
-                        {skill} ×
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Job Responsibilities</Label>
-                  <Textarea value={form.responsibilities} onChange={e => updateField('responsibilities', e.target.value)} rows={4} />
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="emergency">
-            <Card>
-              <CardHeader><CardTitle>Emergency Contacts & Next of Kin</CardTitle></CardHeader>
-              <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Emergency Contact Name</Label>
-                  <Input value={form.emergency_contact_name} onChange={e => updateField('emergency_contact_name', e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Emergency Contact Phone</Label>
-                  <Input value={form.emergency_contact_phone} onChange={e => updateField('emergency_contact_phone', e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Next of Kin Name</Label>
-                  <Input value={form.next_of_kin_name} onChange={e => updateField('next_of_kin_name', e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Next of Kin Phone</Label>
-                  <Input value={form.next_of_kin_phone} onChange={e => updateField('next_of_kin_phone', e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Relationship</Label>
-                  <Input value={form.next_of_kin_relationship} onChange={e => updateField('next_of_kin_relationship', e.target.value)} />
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
           <TabsContent value="dates">
             <Card>
               <CardHeader><CardTitle>Important Dates</CardTitle></CardHeader>
               <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Date of Birth</Label>
-                  <Input type="date" value={form.date_of_birth} onChange={e => updateField('date_of_birth', e.target.value)} />
+                  <Label htmlFor="field-date_of_birth">Date of Birth *</Label>
+                  <Input
+                    id="field-date_of_birth"
+                    type="date"
+                    value={form.date_of_birth || ''}
+                    onChange={e => updateField('date_of_birth', e.target.value)}
+                    aria-invalid={!!fieldErrors.date_of_birth}
+                    className={fieldErrors.date_of_birth ? 'border-destructive focus-visible:ring-destructive' : undefined}
+                    required
+                  />
+                  {fieldErrors.date_of_birth && <p className="text-xs text-destructive">{fieldErrors.date_of_birth}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label>Date Joined</Label>
-                  <Input type="date" value={form.date_joined} onChange={e => updateField('date_joined', e.target.value)} />
+                  <Label htmlFor="field-first_employment_date">Date of Employment *</Label>
+                  <Input
+                    id="field-first_employment_date"
+                    type="date"
+                    value={form.first_employment_date || ''}
+                    onChange={e => updateField('first_employment_date', e.target.value)}
+                    aria-invalid={!!fieldErrors.first_employment_date}
+                    className={fieldErrors.first_employment_date ? 'border-destructive focus-visible:ring-destructive' : undefined}
+                    required
+                  />
+                  {fieldErrors.first_employment_date && <p className="text-xs text-destructive">{fieldErrors.first_employment_date}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label>First Employment Date</Label>
-                  <Input type="date" value={form.first_employment_date} onChange={e => updateField('first_employment_date', e.target.value)} />
+                  <Label htmlFor="field-confirmation_date">Confirmation Date</Label>
+                  <Input
+                    id="field-confirmation_date"
+                    type="date"
+                    value={form.confirmation_date || ''}
+                    onChange={e => updateField('confirmation_date', e.target.value)}
+                    aria-invalid={!!fieldErrors.confirmation_date}
+                    className={fieldErrors.confirmation_date ? 'border-destructive focus-visible:ring-destructive' : undefined}
+                  />
+                  {fieldErrors.confirmation_date && <p className="text-xs text-destructive">{fieldErrors.confirmation_date}</p>}
                 </div>
-                <div className="space-y-2">
-                  <Label>Confirmation Date</Label>
-                  <Input type="date" value={form.confirmation_date} onChange={e => updateField('confirmation_date', e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Probation Start Date</Label>
-                  <Input type="date" value={form.probation_start_date} onChange={e => updateField('probation_start_date', e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Probation End Date</Label>
-                  <Input type="date" value={form.probation_end_date} onChange={e => updateField('probation_end_date', e.target.value)} />
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="notes">
-            <Card>
-              <CardHeader><CardTitle>HR Notes & Remarks</CardTitle></CardHeader>
-              <CardContent>
-                <Textarea value={form.hr_notes} onChange={e => updateField('hr_notes', e.target.value)} rows={6} placeholder="Add management or HR notes here..." />
               </CardContent>
             </Card>
           </TabsContent>

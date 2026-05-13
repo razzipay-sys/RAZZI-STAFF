@@ -1,5 +1,6 @@
 import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
+import { Link } from 'react-router-dom';
 
 export default function StatCard({ 
   title, 
@@ -8,10 +9,15 @@ export default function StatCard({
   description,
   trend,
   loading = false,
-  error = false
+  error = false,
+  to,
+  onClick,
+  disabled = false,
 }) {
-  return (
-    <Card className="group hover:shadow-lg transition-all border-white/5 hover:border-primary/30 bg-gradient-to-br from-white/5 to-white/[0.02]">
+  const isClickable = (!!to || !!onClick) && !disabled;
+
+  const card = (
+    <Card className={`group transition-all border-white/5 bg-gradient-to-br from-white/5 to-white/[0.02] ${isClickable ? 'hover:shadow-lg hover:border-primary/30' : ''}`}>
       <CardContent className="pt-6">
         <div className="flex items-start justify-between">
           <div className="flex-1">
@@ -33,5 +39,35 @@ export default function StatCard({
         </div>
       </CardContent>
     </Card>
+  );
+
+  if (to) {
+    return (
+      <Link
+        to={to}
+        className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
+        aria-disabled={disabled || undefined}
+        tabIndex={disabled ? -1 : 0}
+      >
+        {card}
+      </Link>
+    );
+  }
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={disabled ? undefined : onClick}
+        className="w-full text-left rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background disabled:opacity-60"
+        disabled={disabled}
+      >
+        {card}
+      </button>
+    );
+  }
+
+  return (
+    card
   );
 }

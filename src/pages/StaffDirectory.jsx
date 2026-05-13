@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { entities } from '@/lib/supabaseEntities';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { 
   Plus, Search, Download
 } from 'lucide-react';
@@ -26,20 +26,37 @@ import { exportToCSV, exportToPDF, exportIDCardsToPDF } from '@/lib/exportUtils'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 
-const DEPARTMENTS = ['All', 'Engineering', 'Finance', 'Operations', 'HR', 'Marketing', 'Sales', 'Customer Support', 'Legal', 'Product', 'Executive'];
+const DEPARTMENTS = ['All', 'Engineering', 'Finance', 'Operations', 'HR', 'IT', 'Marketing', 'Sales', 'Customer Support', 'Legal', 'Product', 'Executive'];
 const STATUSES = ['All', 'Active', 'Suspended', 'Resigned', 'Terminated', 'On Leave'];
+const CONFIRMATION_STATUSES = ['All', 'Pending', 'Confirmed', 'Extended', 'Not Applicable'];
 const WORK_MODES = ['All', 'On-site', 'Remote', 'Hybrid'];
 const EMPLOYMENT_TYPES = ['All', 'Full-time', 'Part-time', 'Contract', 'Intern', 'Probation'];
 
 export default function StaffDirectory() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { hasPermission, isAdmin } = useRoleAccess();
   const { logAction } = useAuditLog();
-  const [search, setSearch] = useState('');
-  const [department, setDepartment] = useState('All');
-  const [status, setStatus] = useState('All');
-  const [workMode, setWorkMode] = useState('All');
-  const [empType, setEmpType] = useState('All');
+  const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
+
+  const [search, setSearch] = useState(params.get('q') || '');
+  const [department, setDepartment] = useState(params.get('department') || 'All');
+  const [status, setStatus] = useState(params.get('status') || 'All');
+  const [workMode, setWorkMode] = useState(params.get('work_mode') || 'All');
+  const [empType, setEmpType] = useState(params.get('employment_type') || 'All');
+  const [confirmationStatus, setConfirmationStatus] = useState(params.get('confirmation_status') || 'All');
+  const [missingCvOnly, setMissingCvOnly] = useState(params.get('missing_cv') === '1');
+
+  React.useEffect(() => {
+    const next = new URLSearchParams(location.search);
+    setSearch(next.get('q') || '');
+    setDepartment(next.get('department') || 'All');
+    setStatus(next.get('status') || 'All');
+    setWorkMode(next.get('work_mode') || 'All');
+    setEmpType(next.get('employment_type') || 'All');
+    setConfirmationStatus(next.get('confirmation_status') || 'All');
+    setMissingCvOnly(next.get('missing_cv') === '1');
+  }, [location.search]);
 
   const { data: staffList = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['staff-profiles'],
@@ -48,6 +65,23 @@ export default function StaffDirectory() {
     refetchOnWindowFocus: false,
   });
   const { showLoader, timedOut } = useTimedLoading(isLoading);
+
+  const { data: allDocuments = [] } = useQuery({
+    queryKey: ['staff-documents', 'directory'],
+    queryFn: () => entities.StaffDocument.list('-created_at', 1000),
+    enabled: missingCvOnly,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+
+  const staffWithCv = useMemo(() => {
+    if (!missingCvOnly) return new Set();
+    return new Set(
+      allDocuments
+        .filter(d => d.document_type === 'CV' && d.staff_id)
+        .map(d => d.staff_id)
+    );
+  }, [allDocuments, missingCvOnly]);
 
   const filtered = useMemo(() => {
     return staffList.filter(s => {
@@ -61,9 +95,11 @@ export default function StaffDirectory() {
       const matchStatus = status === 'All' || s.employment_status === status;
       const matchMode = workMode === 'All' || s.work_mode === workMode;
       const matchType = empType === 'All' || s.employment_type === empType;
-      return matchSearch && matchDept && matchStatus && matchMode && matchType;
+      const matchConfirmation = confirmationStatus === 'All' || s.confirmation_status === confirmationStatus;
+      const matchMissingCv = !missingCvOnly || !staffWithCv.has(s.staff_id);
+      return matchSearch && matchDept && matchStatus && matchMode && matchType && matchConfirmation && matchMissingCv;
     });
-  }, [staffList, search, department, status, workMode, empType]);
+  }, [staffList, search, department, status, workMode, empType, confirmationStatus, missingCvOnly, staffWithCv]);
 
   if (showLoader) return <PageLoader />;
 
@@ -194,6 +230,19 @@ export default function StaffDirectory() {
             {EMPLOYMENT_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
           </SelectContent>
         </Select>
+        <Select value={confirmationStatus} onValueChange={setConfirmationStatus}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Confirmation" />
+          </SelectTrigger>
+          <SelectContent>
+            {CONFIRMATION_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        {missingCvOnly && (
+          <Button variant="outline" onClick={() => navigate('/staff')}>
+            Clear: Missing CV
+          </Button>
+        )}
       </div>
 
       {/* Results count */}
