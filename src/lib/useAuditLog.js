@@ -8,6 +8,7 @@ export default function useAuditLog() {
 
   const logAction = async ({ actionType, entityType, entityId, entityName, notes, changes }) => {
     try {
+      const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : null;
       await entities.AuditLog.create({
         action_type: actionType,
         entity_type: entityType,
@@ -17,6 +18,7 @@ export default function useAuditLog() {
         performed_by_role: role || 'guest',
         notes: notes,
         changes: changes ? JSON.stringify(changes) : null,
+        user_agent: userAgent,
       });
     } catch (e) {
       console.error('Failed to log audit action:', e);

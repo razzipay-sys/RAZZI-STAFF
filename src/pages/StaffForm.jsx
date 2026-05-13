@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { entities } from '@/lib/supabaseEntities';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -23,6 +23,7 @@ const CONFIRMATION_STATUSES = ['Pending', 'Confirmed', 'Extended', 'Not Applicab
 const EMPLOYMENT_STATUSES = ['Active', 'Suspended', 'Resigned', 'Terminated', 'On Leave'];
 
 const REQUEST_TIMEOUT_MS = 15000;
+const SAVE_TOAST_ID = 'staff-form-save';
 
 const withTimeout = (promise, timeoutMs) => (
   Promise.race([
@@ -31,6 +32,18 @@ const withTimeout = (promise, timeoutMs) => (
       setTimeout(() => reject(new Error('Request timed out. Please try again.')), timeoutMs);
     })
   ])
+);
+
+const stableStringify = (value) => {
+  if (value === null || value === undefined) return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (typeof value !== 'object') return JSON.stringify(value);
+  const keys = Object.keys(value).sort();
+  return `{${keys.map(k => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(',')}}`;
+};
+
+const pickFormFields = (record, keys) => (
+  Object.fromEntries(keys.map((key) => [key, record?.[key]]))
 );
 
 const normalizeForDb = (record) => {
@@ -58,12 +71,18 @@ export default function StaffForm() {
   const { role: currentUserRole, isSuperAdmin, hasPermission } = useRoleAccess();
   const urlParams = new URLSearchParams(window.location.search);
   const editId = urlParams.get('edit');
+  const formKeys = useMemo(() => Object.keys(emptyForm), []);
 
   const [form, setForm] = useState(emptyForm);
+  const [originalForm, setOriginalForm] = useState(emptyForm);
   const [skillInput, setSkillInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  const isSavingRef = useRef(false);
+  const lastSubmitAtRef = useRef(0);
 
   const { data: existingStaff, isLoading } = useQuery({
     queryKey: ['staff-profile', editId],
@@ -94,12 +113,37 @@ export default function StaffForm() {
 
   useEffect(() => {
     if (existingStaff && existingStaff[0]) {
-      setForm(prev => ({ 
-        ...existingStaff[0], 
-        system_role: userRole || prev.system_role 
-      }));
+      const merged = {
+        ...pickFormFields(existingStaff[0], formKeys),
+        system_role: userRole || '',
+      };
+      setForm(merged);
+      setOriginalForm(merged);
+      setFieldErrors({});
+      setSaveError('');
+      setSaveMessage('');
     }
-  }, [existingStaff, userRole]);
+  }, [existingStaff, userRole, formKeys]);
+
+  const formComparable = useMemo(() => stableStringify(normalizeForDb(pickFormFields(form, formKeys))), [form, formKeys]);
+  const originalComparable = useMemo(() => stableStringify(normalizeForDb(pickFormFields(originalForm, formKeys))), [originalForm, formKeys]);
+  const hasUnsavedChanges = editId ? formComparable !== originalComparable : formComparable !== stableStringify(normalizeForDb(pickFormFields(emptyForm, formKeys)));
+
+  useEffect(() => {
+    const shouldWarn = hasUnsavedChanges && !isSaving;
+    const handler = (e) => {
+      if (!shouldWarn) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [hasUnsavedChanges, isSaving]);
+
+  const confirmLeaveIfDirty = () => {
+    if (!hasUnsavedChanges || isSaving) return true;
+    return window.confirm('You have unsaved changes. Leave without saving?');
+  };
 
   const generateStaffId = () => {
     const lastStaff = allStaff[0];
@@ -182,6 +226,13 @@ export default function StaffForm() {
       const normalizedStaffProfileData = normalizeForDb(staffProfileData);
 
       if (editId) {
+        const before = normalizeForDb(pickFormFields(originalForm, formKeys));
+        const after = normalizeForDb(pickFormFields({ ...originalForm, ...normalizedStaffProfileData, system_role: desiredSystemRole }, formKeys));
+        const changes = {};
+        formKeys.forEach((k) => {
+          if (before[k] !== after[k]) changes[k] = { from: before[k], to: after[k] };
+        });
+
         const updated = await withTimeout(
           entities.StaffProfile.update(editId, normalizedStaffProfileData),
           REQUEST_TIMEOUT_MS
@@ -198,7 +249,8 @@ export default function StaffForm() {
         await logAction({
           actionType: 'UPDATE', entityType: 'StaffProfile',
           entityId: editId, entityName: normalizedStaffProfileData.full_name,
-          notes: 'Staff profile updated'
+          notes: 'Staff profile updated',
+          changes,
         });
         return updated;
       } else {
@@ -229,16 +281,27 @@ export default function StaffForm() {
       }
     },
     onSuccess: (updatedRecord) => {
+      toast.success(editId ? 'Staff profile updated' : 'Staff profile created', { id: SAVE_TOAST_ID });
       queryClient.invalidateQueries({ queryKey: ['staff-profiles'] });
       queryClient.invalidateQueries({ queryKey: ['staff-profiles', 'latest'] });
       queryClient.invalidateQueries({ queryKey: ['user-roles-list'] });
-      toast.success(editId ? 'Staff profile updated' : 'Staff profile created');
       setSaveError('');
       setSaveMessage('Saved');
       setTimeout(() => setSaveMessage(''), 2500);
 
       if (editId && updatedRecord) {
+        queryClient.setQueryData(['staff-profile', editId], [updatedRecord]);
+        queryClient.setQueryData(['staff-profiles'], (current) => {
+          const list = Array.isArray(current) ? current : [];
+          return list.map(s => (s.id === updatedRecord.id ? { ...s, ...updatedRecord } : s));
+        });
+        queryClient.setQueryData(['staff-profiles-access'], (current) => {
+          const list = Array.isArray(current) ? current : [];
+          return list.map(s => (s.id === updatedRecord.id ? { ...s, ...updatedRecord } : s));
+        });
+
         setForm(prev => ({ ...prev, ...updatedRecord }));
+        setOriginalForm({ ...pickFormFields(updatedRecord, formKeys), system_role: form.system_role || '' });
         queryClient.invalidateQueries({ queryKey: ['staff-profile', editId] });
         if (updatedRecord.email) {
           queryClient.invalidateQueries({ queryKey: ['user-role', updatedRecord.email] });
@@ -250,29 +313,66 @@ export default function StaffForm() {
     },
     onSettled: () => {
       setIsSaving(false);
+      isSavingRef.current = false;
     },
     onError: (error) => {
       setSaveMessage('');
       setSaveError(error?.message || 'Failed to save staff profile');
-      toast.error(error?.message || 'Failed to save staff profile');
+      toast.error(error?.message || 'Failed to save staff profile', { id: SAVE_TOAST_ID });
     }
   });
 
   const validateAndSave = () => {
-    if (!form.full_name || !form.email || !form.department || !form.role || !form.employment_status) {
+    if (isSavingRef.current) return;
+    const now = Date.now();
+    if (now - lastSubmitAtRef.current < 800) return;
+    lastSubmitAtRef.current = now;
+
+    const nextErrors = {};
+    if (!form.full_name) nextErrors.full_name = 'Full name is required';
+    if (!form.email) nextErrors.email = 'Email is required';
+    if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) nextErrors.email = 'Enter a valid email address';
+    if (!form.department) nextErrors.department = 'Department is required';
+    if (!form.role) nextErrors.role = 'Role/Position is required';
+    if (!form.employment_status) nextErrors.employment_status = 'Employment status is required';
+
+    setFieldErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
       setSaveMessage('');
-      setSaveError('Please fill in all required fields');
-      toast.error('Please fill in all required fields');
+      setSaveError('Please fix the highlighted fields');
+      toast.error('Please fix the highlighted fields', { id: SAVE_TOAST_ID });
+      const order = ['full_name', 'email', 'department', 'role', 'employment_status'];
+      const first = order.find(k => nextErrors[k]);
+      if (first) {
+        requestAnimationFrame(() => {
+          const el = document.getElementById(`field-${first}`);
+          if (el?.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          if (el?.focus) el.focus();
+        });
+      }
       return;
     }
+
+    if (editId && !hasUnsavedChanges) return;
+
     setSaveError('');
     setIsSaving(true);
+    isSavingRef.current = true;
     mutation.reset();
+    toast.loading('Saving...', { id: SAVE_TOAST_ID });
     mutation.mutate(form);
   };
 
   const updateField = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
+    setFieldErrors(prev => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+    setSaveError('');
+    setSaveMessage('');
   };
 
   const addSkill = () => {
@@ -289,8 +389,15 @@ export default function StaffForm() {
   if (isLoading && editId) return <PageLoader />;
 
   return (
-    <div className="max-w-4xl mx-auto animate-fade-in pb-28">
-      <Button variant="ghost" onClick={() => navigate(-1)} className="mb-4">
+    <div className="max-w-4xl mx-auto animate-fade-in pb-[calc(7rem+env(safe-area-inset-bottom))]">
+      <Button
+        variant="ghost"
+        onClick={() => {
+          if (!confirmLeaveIfDirty()) return;
+          navigate(-1);
+        }}
+        className="mb-4"
+      >
         <ArrowLeft className="w-4 h-4 mr-2" /> Back
       </Button>
 
@@ -312,8 +419,16 @@ export default function StaffForm() {
               <CardHeader><CardTitle>Basic Information</CardTitle></CardHeader>
               <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Full Name *</Label>
-                  <Input value={form.full_name} onChange={e => updateField('full_name', e.target.value)} required />
+                  <Label htmlFor="field-full_name">Full Name *</Label>
+                  <Input
+                    id="field-full_name"
+                    value={form.full_name || ''}
+                    onChange={e => updateField('full_name', e.target.value)}
+                    aria-invalid={!!fieldErrors.full_name}
+                    className={fieldErrors.full_name ? 'border-destructive focus-visible:ring-destructive' : undefined}
+                    required
+                  />
+                  {fieldErrors.full_name && <p className="text-xs text-destructive">{fieldErrors.full_name}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label>Staff ID (Auto-generated)</Label>
@@ -324,8 +439,17 @@ export default function StaffForm() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Email *</Label>
-                  <Input type="email" value={form.email} onChange={e => updateField('email', e.target.value)} required />
+                  <Label htmlFor="field-email">Email *</Label>
+                  <Input
+                    id="field-email"
+                    type="email"
+                    value={form.email || ''}
+                    onChange={e => updateField('email', e.target.value)}
+                    aria-invalid={!!fieldErrors.email}
+                    className={fieldErrors.email ? 'border-destructive focus-visible:ring-destructive' : undefined}
+                    required
+                  />
+                  {fieldErrors.email && <p className="text-xs text-destructive">{fieldErrors.email}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label>Phone</Label>
@@ -344,15 +468,30 @@ export default function StaffForm() {
               <CardHeader><CardTitle>Employment Details</CardTitle></CardHeader>
               <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Department *</Label>
-                  <Select value={form.department} onValueChange={v => updateField('department', v)}>
-                    <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
+                  <Label htmlFor="field-department">Department *</Label>
+                  <Select value={form.department || ''} onValueChange={v => updateField('department', v)}>
+                    <SelectTrigger
+                      id="field-department"
+                      aria-invalid={!!fieldErrors.department}
+                      className={fieldErrors.department ? 'border-destructive focus-visible:ring-destructive' : undefined}
+                    >
+                      <SelectValue placeholder="Select department" />
+                    </SelectTrigger>
                     <SelectContent>{DEPARTMENTS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
                   </Select>
+                  {fieldErrors.department && <p className="text-xs text-destructive">{fieldErrors.department}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label>Role/Position *</Label>
-                  <Input value={form.role} onChange={e => updateField('role', e.target.value)} required />
+                  <Label htmlFor="field-role">Role/Position *</Label>
+                  <Input
+                    id="field-role"
+                    value={form.role || ''}
+                    onChange={e => updateField('role', e.target.value)}
+                    aria-invalid={!!fieldErrors.role}
+                    className={fieldErrors.role ? 'border-destructive focus-visible:ring-destructive' : undefined}
+                    required
+                  />
+                  {fieldErrors.role && <p className="text-xs text-destructive">{fieldErrors.role}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label>Employment Type</Label>
@@ -369,11 +508,18 @@ export default function StaffForm() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Employment Status *</Label>
-                  <Select value={form.employment_status} onValueChange={v => updateField('employment_status', v)}>
-                    <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
+                  <Label htmlFor="field-employment_status">Employment Status *</Label>
+                  <Select value={form.employment_status || ''} onValueChange={v => updateField('employment_status', v)}>
+                    <SelectTrigger
+                      id="field-employment_status"
+                      aria-invalid={!!fieldErrors.employment_status}
+                      className={fieldErrors.employment_status ? 'border-destructive focus-visible:ring-destructive' : undefined}
+                    >
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
                     <SelectContent>{EMPLOYMENT_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                   </Select>
+                  {fieldErrors.employment_status && <p className="text-xs text-destructive">{fieldErrors.employment_status}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label>Confirmation Status</Label>
@@ -506,23 +652,47 @@ export default function StaffForm() {
           </TabsContent>
         </Tabs>
 
-        <div className="fixed bottom-0 left-0 right-0 z-[9999] pointer-events-auto border-t border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-          <div className="max-w-4xl mx-auto px-4 py-3 md:px-6">
+        <div
+          className="fixed bottom-0 left-0 right-0 z-[9999] pointer-events-auto border-t border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+          role="region"
+          aria-label="Profile actions"
+        >
+          <div className="max-w-4xl mx-auto px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:px-6">
             {(saveError || saveMessage) && (
               <div className="mb-2">
                 {saveError && <p className="text-sm font-medium text-destructive">{saveError}</p>}
                 {!saveError && saveMessage && <p className="text-sm font-medium text-primary">{saveMessage}</p>}
               </div>
             )}
+            {editId && !saveError && !saveMessage && (
+              <div className="mb-2">
+                <p className="text-sm font-medium text-muted-foreground">{hasUnsavedChanges ? 'Unsaved changes' : 'No changes to save'}</p>
+              </div>
+            )}
             <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
-              <Button type="button" variant="outline" onClick={() => navigate(-1)} disabled={isSaving}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  if (!confirmLeaveIfDirty()) return;
+                  navigate(-1);
+                }}
+                disabled={isSaving}
+                aria-label="Cancel and go back"
+              >
                 Cancel
               </Button>
+              {!!saveError && !isSaving && (
+                <Button type="button" variant="outline" onClick={validateAndSave} aria-label="Retry saving">
+                  Retry
+                </Button>
+              )}
               <Button
                 type="button"
                 onClick={validateAndSave}
-                disabled={isSaving}
+                disabled={isSaving || (editId && !hasUnsavedChanges)}
                 className="gradient-primary text-primary-foreground w-full sm:w-auto pointer-events-auto"
+                aria-label={editId ? 'Update profile' : 'Create profile'}
               >
                 <Save className="w-4 h-4 mr-2" /> {isSaving ? 'Saving...' : (editId ? 'Update Profile' : 'Create Profile')}
               </Button>
