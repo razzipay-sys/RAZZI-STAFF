@@ -13,28 +13,6 @@ const withTimeout = (promise, timeoutMs = 6000) => (
   ])
 );
 
-async function getNextStaffId({ reserveFirstForSuperAdmin }) {
-  const { data, error } = await supabase
-    .from('staff_profiles')
-    .select('staff_id')
-    .not('staff_id', 'is', null)
-    .like('staff_id', 'RP-%')
-    .order('staff_id', { ascending: false })
-    .limit(1);
-
-  if (error) throw error;
-
-  let nextNum = 1;
-  const last = data?.[0]?.staff_id;
-  if (last?.startsWith('RP-')) {
-    const lastNum = parseInt(last.split('-')[1]);
-    if (!Number.isNaN(lastNum)) nextNum = lastNum + 1;
-  }
-
-  if (reserveFirstForSuperAdmin && nextNum === 1) nextNum = 2;
-  return `RP-${nextNum.toString().padStart(4, '0')}`;
-}
-
 async function syncStaffProfileForUser(user) {
   if (!user?.email || profileSyncInFlight.has(user.id)) return;
   profileSyncInFlight.add(user.id);
@@ -84,9 +62,7 @@ async function syncStaffProfileForUser(user) {
         return;
       }
 
-      const staffId = isSuperAdminUser
-        ? 'RP-0001'
-        : await getNextStaffId({ reserveFirstForSuperAdmin: true });
+      const staffId = isSuperAdminUser ? 'RP-0001' : null;
 
       const { error } = await supabase.from('staff_profiles').insert({
         user_id: user.id,

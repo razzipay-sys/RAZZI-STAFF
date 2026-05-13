@@ -43,6 +43,75 @@ CREATE TABLE IF NOT EXISTS staff_profiles (
   updated_at                  TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ─── staff_id generation (atomic, non-repeating) ────────────
+CREATE SEQUENCE IF NOT EXISTS public.staff_id_seq START 2;
+
+CREATE OR REPLACE FUNCTION public.next_staff_id()
+RETURNS TEXT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  next_num BIGINT;
+BEGIN
+  next_num := nextval('public.staff_id_seq');
+  IF next_num < 2 THEN
+    next_num := nextval('public.staff_id_seq');
+  END IF;
+  RETURN 'RP-' || lpad(next_num::text, 4, '0');
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.assign_staff_id()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.staff_id IS NULL OR NEW.staff_id = '' THEN
+    NEW.staff_id := public.next_staff_id();
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DO $$
+BEGIN
+  IF to_regclass('public.staff_profiles') IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1
+      FROM pg_trigger
+      WHERE tgname = 'trg_staff_profiles_assign_staff_id'
+        AND tgrelid = 'public.staff_profiles'::regclass
+    ) THEN
+      CREATE TRIGGER trg_staff_profiles_assign_staff_id
+      BEFORE INSERT ON public.staff_profiles
+      FOR EACH ROW
+      EXECUTE FUNCTION public.assign_staff_id();
+    END IF;
+  END IF;
+END
+$$;
+
+DO $$
+DECLARE
+  max_num BIGINT;
+BEGIN
+  IF to_regclass('public.staff_profiles') IS NOT NULL THEN
+    SELECT COALESCE(MAX(NULLIF(regexp_replace(staff_id, '^RP-', ''), '')::BIGINT), 1)
+    INTO max_num
+    FROM public.staff_profiles
+    WHERE staff_id ~ '^RP-[0-9]+$';
+
+    IF max_num < 2 THEN
+      max_num := 1;
+    END IF;
+
+    PERFORM setval('public.staff_id_seq', GREATEST(max_num, 1));
+  END IF;
+END
+$$;
+
 DO $$
 BEGIN
   IF to_regclass('public.staff_profiles') IS NOT NULL THEN
