@@ -63,6 +63,56 @@ BEGIN
 END;
 $$;
 
+-- Link (or create) a staff profile for the authenticated user using their JWT email.
+-- This prevents duplicate email inserts and allows first-login profile creation without relaxing RLS.
+CREATE OR REPLACE FUNCTION public.link_or_create_staff_profile(p_full_name TEXT DEFAULT NULL)
+RETURNS public.staff_profiles
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  jwt_email TEXT;
+  normalized_email TEXT;
+  profile public.staff_profiles;
+BEGIN
+  jwt_email := auth.jwt()->>'email';
+  normalized_email := lower(trim(jwt_email));
+
+  IF normalized_email IS NULL OR normalized_email = '' THEN
+    RAISE EXCEPTION 'Missing authenticated email';
+  END IF;
+
+  INSERT INTO public.staff_profiles (user_id, email, full_name, role, employment_status, staff_id)
+  VALUES (
+    auth.uid()::text,
+    normalized_email,
+    COALESCE(NULLIF(trim(p_full_name), ''), split_part(normalized_email, '@', 1)),
+    'user',
+    'Active',
+    NULL
+  )
+  ON CONFLICT (email) DO UPDATE
+    SET user_id = EXCLUDED.user_id,
+        updated_at = NOW()
+    WHERE public.staff_profiles.user_id IS NULL
+       OR public.staff_profiles.user_id = EXCLUDED.user_id
+  RETURNING * INTO profile;
+
+  IF profile.id IS NULL THEN
+    SELECT *
+    INTO profile
+    FROM public.staff_profiles
+    WHERE lower(email) = normalized_email
+    LIMIT 1;
+  END IF;
+
+  RETURN profile;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.link_or_create_staff_profile(TEXT) TO authenticated;
+
 CREATE OR REPLACE FUNCTION public.assign_staff_id()
 RETURNS TRIGGER
 LANGUAGE plpgsql

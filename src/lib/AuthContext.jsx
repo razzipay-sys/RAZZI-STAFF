@@ -22,58 +22,29 @@ async function syncStaffProfileForUser(user) {
       const superAdminEmail = import.meta.env.VITE_SUPER_ADMIN_EMAIL;
       const isSuperAdminUser = !!superAdminEmail && user.email.toLowerCase() === superAdminEmail.toLowerCase();
 
-      const { data: profiles, error: fetchError } = await supabase
-        .from('staff_profiles')
-        .select('id, staff_id, user_id')
-        .eq('email', user.email)
-        .limit(1);
+      const { data: linkedProfile, error: linkError } = await supabase.rpc(
+        'link_or_create_staff_profile',
+        { p_full_name: user.user_metadata?.full_name || null }
+      );
+      if (linkError) throw linkError;
 
-      if (fetchError) throw fetchError;
+      if (isSuperAdminUser && linkedProfile?.id && linkedProfile?.staff_id !== 'RP-0001') {
+        const { data: existing001, error: existing001Error } = await supabase
+          .from('staff_profiles')
+          .select('id')
+          .eq('staff_id', 'RP-0001')
+          .limit(1);
+        if (existing001Error) throw existing001Error;
 
-      const profile = profiles?.[0];
-      if (profile) {
-        if (!profile.user_id) {
+        const holder = existing001?.[0];
+        if (!holder || holder.id === linkedProfile.id) {
           const { error } = await supabase
             .from('staff_profiles')
-            .update({ user_id: user.id })
-            .eq('id', profile.id);
-
+            .update({ staff_id: 'RP-0001' })
+            .eq('id', linkedProfile.id);
           if (error) throw error;
         }
-
-        if (isSuperAdminUser && profile.staff_id && profile.staff_id !== 'RP-0001') {
-          const { data: existing001, error: existing001Error } = await supabase
-            .from('staff_profiles')
-            .select('id')
-            .eq('staff_id', 'RP-0001')
-            .limit(1);
-          if (existing001Error) throw existing001Error;
-
-          const holder = existing001?.[0];
-          if (!holder || holder.id === profile.id) {
-            const { error } = await supabase
-              .from('staff_profiles')
-              .update({ staff_id: 'RP-0001' })
-              .eq('id', profile.id);
-            if (error) throw error;
-          }
-        }
-
-        return;
       }
-
-      const staffId = isSuperAdminUser ? 'RP-0001' : null;
-
-      const { error } = await supabase.from('staff_profiles').insert({
-        user_id: user.id,
-        email: user.email,
-        full_name: user.user_metadata?.full_name || user.email.split('@')[0],
-        staff_id: staffId,
-        role: user.user_metadata?.role || 'user',
-        employment_status: 'Active',
-      });
-
-      if (error) throw error;
     })());
   } catch (error) {
     if (import.meta.env.DEV) {

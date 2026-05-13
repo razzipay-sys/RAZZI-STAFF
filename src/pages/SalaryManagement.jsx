@@ -44,7 +44,7 @@ export default function SalaryManagement() {
 
   const { data: staffList = [] } = useQuery({
     queryKey: ['staff-profiles'],
-    queryFn: () => entities.StaffProfile.list('-created_at', 200),
+    queryFn: () => entities.StaffProfile.list('-created_at', 500),
     staleTime: 0,
     refetchOnWindowFocus: true,
   });

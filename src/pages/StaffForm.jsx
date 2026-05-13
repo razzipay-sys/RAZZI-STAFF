@@ -262,7 +262,11 @@ export default function StaffForm() {
   const mutation = useMutation({
     mutationFn: async (data) => {
       const { system_role: desiredSystemRole, ...staffProfileData } = data || {};
-      const normalizedStaffProfileData = normalizeForDb(staffProfileData);
+      const normalizedEmail = typeof staffProfileData.email === 'string'
+        ? staffProfileData.email.trim().toLowerCase()
+        : staffProfileData.email;
+      const cleanedStaffProfileData = { ...staffProfileData, email: normalizedEmail };
+      const normalizedStaffProfileData = normalizeForDb(cleanedStaffProfileData);
 
       if (editId) {
         const before = normalizeForDb(pickFormFields(originalForm, formKeys));
@@ -300,10 +304,33 @@ export default function StaffForm() {
           ...normalizedStaffProfileData,
           staff_id: null,
         };
-        const result = await withTimeout(
-          entities.StaffProfile.create(finalData),
-          REQUEST_TIMEOUT_MS
-        );
+        let result;
+        try {
+          result = await withTimeout(
+            entities.StaffProfile.create(finalData),
+            REQUEST_TIMEOUT_MS
+          );
+        } catch (error) {
+          const isDuplicateEmail = error?.code === '23505'
+            || error?.message?.includes('staff_profiles_email_key')
+            || error?.message?.toLowerCase?.().includes('duplicate key value')
+            || error?.message?.toLowerCase?.().includes('email_key');
+
+          if (!isDuplicateEmail || !finalData.email) throw error;
+
+          const { data: existing, error: lookupError } = await supabase
+            .from('staff_profiles')
+            .select('id')
+            .ilike('email', finalData.email)
+            .maybeSingle();
+
+          if (lookupError || !existing?.id) throw error;
+
+          result = await withTimeout(
+            entities.StaffProfile.update(existing.id, normalizedStaffProfileData),
+            REQUEST_TIMEOUT_MS
+          );
+        }
 
         await withTimeout(uploadCvForStaff(result), REQUEST_TIMEOUT_MS);
         
