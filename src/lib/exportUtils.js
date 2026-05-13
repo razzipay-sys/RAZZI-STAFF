@@ -138,33 +138,52 @@ export const exportToPDF = async (data, options = {}) => {
 
 const drawIDCard = ({ doc, staff, logoDataUrl, companyName, appName, photoDataUrl }) => {
   const primary = [32, 178, 170];
-  doc.setFillColor(248, 250, 252);
-  doc.rect(0, 0, 86, 54, 'F');
+  const accent = [25, 118, 210];
+
+  doc.setFillColor(246, 248, 252);
+  doc.roundedRect(1.5, 1.5, 83, 51, 4, 4, 'F');
+
+  doc.setDrawColor(220);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(1.5, 1.5, 83, 51, 4, 4, 'S');
 
   doc.setFillColor(...primary);
-  doc.rect(0, 0, 86, 10, 'F');
+  doc.roundedRect(1.5, 1.5, 83, 11, 4, 4, 'F');
+  doc.setFillColor(...accent);
+  doc.rect(1.5, 12.5, 83, 1.2, 'F');
+
+  doc.setFillColor(...primary);
+  doc.setDrawColor(...primary);
+  doc.triangle(63, 13.7, 84.5, 13.7, 84.5, 33);
+  doc.setFillColor(...accent);
+  doc.setDrawColor(...accent);
+  doc.triangle(68, 13.7, 84.5, 13.7, 84.5, 28);
 
   if (logoDataUrl) {
-    doc.addImage(logoDataUrl, 'JPEG', 3, 1.5, 7, 7);
+    doc.addImage(logoDataUrl, 'JPEG', 5, 3.2, 7.5, 7.5);
   }
 
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(10);
-  doc.text(appName, 12, 7);
+  doc.text(appName, 14, 8);
 
-  doc.setTextColor(30);
-  doc.setFontSize(7);
-  doc.text(companyName, 82.5, 7, { align: 'right' });
+  doc.setFontSize(6.5);
+  doc.text(companyName, 81.5, 8, { align: 'right' });
 
-  doc.setDrawColor(220);
+  const name = (staff?.full_name || 'N/A').toString();
+  const role = (staff?.role || 'N/A').toString();
+  const department = (staff?.department || 'N/A').toString();
+  const staffId = (staff?.staff_id || 'N/A').toString();
+
   doc.setFillColor(255, 255, 255);
-  doc.roundedRect(4, 14, 18, 22, 2, 2, 'FD');
+  doc.setDrawColor(225);
+  doc.roundedRect(5, 17, 21, 21, 5, 5, 'FD');
 
   if (photoDataUrl) {
     const type = photoDataUrl.includes('image/png') ? 'PNG' : 'JPEG';
-    doc.addImage(photoDataUrl, type, 4.5, 14.5, 17, 21);
+    doc.addImage(photoDataUrl, type, 6, 18, 19, 19);
   } else {
-    const initials = (staff?.full_name || '??')
+    const initials = name
       .split(' ')
       .filter(Boolean)
       .map(part => part[0])
@@ -173,29 +192,43 @@ const drawIDCard = ({ doc, staff, logoDataUrl, companyName, appName, photoDataUr
       .slice(0, 2);
     doc.setTextColor(90);
     doc.setFontSize(14);
-    doc.text(initials || '??', 13, 28, { align: 'center' });
+    doc.text(initials || '??', 15.5, 30, { align: 'center' });
   }
 
-  const name = staff?.full_name || 'N/A';
-  const role = staff?.role || 'N/A';
-  const department = staff?.department || 'N/A';
-  const staffId = staff?.staff_id || 'N/A';
-
   doc.setTextColor(20);
-  doc.setFontSize(10);
-  doc.text(name, 25, 20, { maxWidth: 58 });
+  doc.setFontSize(10.5);
+  doc.text(name, 29, 23, { maxWidth: 52 });
 
   doc.setTextColor(80);
   doc.setFontSize(8);
-  doc.text(`${role} • ${department}`, 25, 26, { maxWidth: 58 });
+  doc.text(role, 29, 28, { maxWidth: 52 });
+
+  doc.setTextColor(110);
+  doc.setFontSize(7.5);
+  doc.text(department, 29, 32, { maxWidth: 52 });
+
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(230);
+  doc.roundedRect(29, 36, 52, 10.5, 3, 3, 'FD');
 
   doc.setTextColor(...primary);
-  doc.setFontSize(9);
-  doc.text(`ID: ${staffId}`, 25, 33);
+  doc.setFontSize(7);
+  doc.text('STAFF ID', 32, 40);
+  doc.setTextColor(25);
+  doc.setFontSize(9.5);
+  doc.text(staffId, 32, 45);
 
-  doc.setTextColor(120);
+  doc.setDrawColor(180);
+  for (let i = 0; i < 18; i += 1) {
+    const x = 61 + i * 1.1;
+    const h = i % 3 === 0 ? 6 : 4;
+    doc.setLineWidth(i % 2 === 0 ? 0.5 : 0.25);
+    doc.line(x, 39.5, x, 39.5 + h);
+  }
+
+  doc.setTextColor(130);
   doc.setFontSize(6.5);
-  doc.text('This card is the property of the company.', 4, 50);
+  doc.text('Property of the company • If found, return to HR', 5, 50.5);
 };
 
 export const exportIDCardToPDF = async (staff, options = {}) => {

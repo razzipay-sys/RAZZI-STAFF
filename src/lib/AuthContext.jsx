@@ -13,12 +13,37 @@ const withTimeout = (promise, timeoutMs = 6000) => (
   ])
 );
 
+async function getNextStaffId({ reserveFirstForSuperAdmin }) {
+  const { data, error } = await supabase
+    .from('staff_profiles')
+    .select('staff_id')
+    .not('staff_id', 'is', null)
+    .like('staff_id', 'RP-%')
+    .order('staff_id', { ascending: false })
+    .limit(1);
+
+  if (error) throw error;
+
+  let nextNum = 1;
+  const last = data?.[0]?.staff_id;
+  if (last?.startsWith('RP-')) {
+    const lastNum = parseInt(last.split('-')[1]);
+    if (!Number.isNaN(lastNum)) nextNum = lastNum + 1;
+  }
+
+  if (reserveFirstForSuperAdmin && nextNum === 1) nextNum = 2;
+  return `RP-${nextNum.toString().padStart(4, '0')}`;
+}
+
 async function syncStaffProfileForUser(user) {
   if (!user?.email || profileSyncInFlight.has(user.id)) return;
   profileSyncInFlight.add(user.id);
 
   try {
     await withTimeout((async () => {
+      const superAdminEmail = import.meta.env.VITE_SUPER_ADMIN_EMAIL;
+      const isSuperAdminUser = !!superAdminEmail && user.email.toLowerCase() === superAdminEmail.toLowerCase();
+
       const { data: profiles, error: fetchError } = await supabase
         .from('staff_profiles')
         .select('id, staff_id, user_id')
@@ -37,26 +62,37 @@ async function syncStaffProfileForUser(user) {
 
           if (error) throw error;
         }
+
+        if (isSuperAdminUser && profile.staff_id && profile.staff_id !== 'RP-0001') {
+          const { data: existing001, error: existing001Error } = await supabase
+            .from('staff_profiles')
+            .select('id')
+            .eq('staff_id', 'RP-0001')
+            .limit(1);
+          if (existing001Error) throw existing001Error;
+
+          const holder = existing001?.[0];
+          if (!holder || holder.id === profile.id) {
+            const { error } = await supabase
+              .from('staff_profiles')
+              .update({ staff_id: 'RP-0001' })
+              .eq('id', profile.id);
+            if (error) throw error;
+          }
+        }
+
         return;
       }
 
-      const { data: lastStaff } = await supabase
-        .from('staff_profiles')
-        .select('staff_id')
-        .order('staff_id', { ascending: false })
-        .limit(1);
-
-      let nextNum = 1;
-      if (lastStaff?.[0]?.staff_id?.startsWith('RP-')) {
-        const lastNum = parseInt(lastStaff[0].staff_id.split('-')[1]);
-        if (!Number.isNaN(lastNum)) nextNum = lastNum + 1;
-      }
+      const staffId = isSuperAdminUser
+        ? 'RP-0001'
+        : await getNextStaffId({ reserveFirstForSuperAdmin: true });
 
       const { error } = await supabase.from('staff_profiles').insert({
         user_id: user.id,
         email: user.email,
         full_name: user.user_metadata?.full_name || user.email.split('@')[0],
-        staff_id: `RP-${nextNum.toString().padStart(4, '0')}`,
+        staff_id: staffId,
         role: user.user_metadata?.role || 'user',
         employment_status: 'Active',
       });

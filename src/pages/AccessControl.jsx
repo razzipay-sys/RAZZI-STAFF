@@ -52,6 +52,10 @@ export default function AccessControl() {
   const [manualEmail, setManualEmail] = useState('');
   const [manualRole, setManualRole] = useState('user');
   const [selectedUser, setSelectedUser] = useState(null);
+  const visibleRoles = useMemo(
+    () => (isSuperAdmin ? ROLES : ROLES.filter(r => r.value !== 'super_admin')),
+    [isSuperAdmin]
+  );
 
   const { data: staffList = [], isLoading: loadingStaff, isError: staffError, error: staffErrorData, refetch: refetchStaff } = useQuery({
     queryKey: ['staff-profiles-access'],
@@ -265,8 +269,8 @@ export default function AccessControl() {
             <Select value={manualRole} onValueChange={setManualRole}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {ROLES.map(role => (
-                  <SelectItem key={role.value} value={role.value} disabled={role.value === 'super_admin' && !isSuperAdmin}>
+                {visibleRoles.map(role => (
+                  <SelectItem key={role.value} value={role.value}>
                     {role.label}
                   </SelectItem>
                 ))}
@@ -363,11 +367,10 @@ export default function AccessControl() {
                     <SelectValue placeholder="Select a role" />
                   </SelectTrigger>
                   <SelectContent>
-                    {ROLES.map(role => (
+                    {visibleRoles.map(role => (
                       <SelectItem
                         key={role.value}
                         value={role.value}
-                        disabled={role.value === 'super_admin' && !isSuperAdmin}
                       >
                         {role.label}
                       </SelectItem>

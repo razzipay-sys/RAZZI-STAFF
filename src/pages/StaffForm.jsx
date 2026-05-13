@@ -21,6 +21,8 @@ const EMPLOYMENT_STATUSES = ['Active', 'Suspended', 'Resigned', 'Terminated', 'O
 
 const REQUEST_TIMEOUT_MS = 15000;
 const SAVE_TOAST_ID = 'staff-form-save';
+const RESERVED_SUPER_ADMIN_STAFF_ID = 'RP-0001';
+const FALLBACK_FIRST_NON_SUPER_ADMIN_ID = 'RP-0002';
 
 const withTimeout = (promise, timeoutMs) => (
   Promise.race([
@@ -106,11 +108,33 @@ export default function StaffForm() {
     enabled: !!editId && !!existingStaff?.[0]?.email,
   });
 
-  // Get the latest staff to generate the next ID
-  const { data: allStaff = [] } = useQuery({
-    queryKey: ['staff-profiles', 'latest'],
-    queryFn: () => entities.StaffProfile.list('-staff_id', 1),
+  const { data: nextStaffId, isFetching: isFetchingNextStaffId } = useQuery({
+    queryKey: ['staff-profiles', 'next-staff-id'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('staff_profiles')
+        .select('staff_id')
+        .not('staff_id', 'is', null)
+        .like('staff_id', 'RP-%')
+        .order('staff_id', { ascending: false })
+        .limit(1);
+
+      if (error) throw error;
+
+      let nextNum = 1;
+      const last = data?.[0]?.staff_id;
+      if (last?.startsWith('RP-')) {
+        const lastNum = parseInt(last.split('-')[1]);
+        if (!Number.isNaN(lastNum)) nextNum = lastNum + 1;
+      }
+
+      if (nextNum === 1) nextNum = 2;
+      return `RP-${nextNum.toString().padStart(4, '0')}`;
+    },
     enabled: !editId,
+    staleTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 
   useEffect(() => {
@@ -145,18 +169,6 @@ export default function StaffForm() {
   const confirmLeaveIfDirty = () => {
     if (!hasUnsavedChanges || isSaving) return true;
     return window.confirm('You have unsaved changes. Leave without saving?');
-  };
-
-  const generateStaffId = () => {
-    const lastStaff = allStaff[0];
-    let nextNum = 1;
-    
-    if (lastStaff && lastStaff.staff_id && lastStaff.staff_id.startsWith('RP-')) {
-      const lastNum = parseInt(lastStaff.staff_id.split('-')[1]);
-      if (!isNaN(lastNum)) nextNum = lastNum + 1;
-    }
-    
-    return `RP-${nextNum.toString().padStart(4, '0')}`;
   };
 
   const uploadCvForStaff = async (staffRecord) => {
@@ -316,7 +328,7 @@ export default function StaffForm() {
         // Auto-generate Staff ID for new profiles
         const finalData = {
           ...normalizedStaffProfileData,
-          staff_id: generateStaffId()
+          staff_id: nextStaffId || FALLBACK_FIRST_NON_SUPER_ADMIN_ID
         };
         const result = await withTimeout(
           entities.StaffProfile.create(finalData),
@@ -486,7 +498,7 @@ export default function StaffForm() {
                 <div className="space-y-2">
                   <Label>Staff ID (Auto-generated)</Label>
                   <Input 
-                    value={editId ? form.staff_id : (allStaff.length > 0 ? generateStaffId() : 'Generating...')} 
+                    value={editId ? (form.staff_id || '') : (isFetchingNextStaffId ? 'Generating...' : (nextStaffId || 'Generating...'))} 
                     disabled 
                     className="bg-muted font-mono"
                   />
