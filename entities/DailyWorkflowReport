@@ -2,8 +2,9 @@
   "name": "DailyWorkflowReport",
   "type": "object",
   "properties": {
-    "staff_id": {
-      "type": "string"
+    "staff_profile_id": {
+      "type": "string",
+      "description": "Reference to StaffProfile (UUID id)"
     },
     "staff_name": {
       "type": "string"
@@ -106,7 +107,7 @@
     }
   },
   "required": [
-    "staff_id",
+    "staff_profile_id",
     "staff_name",
     "report_date",
     "work_done"

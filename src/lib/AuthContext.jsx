@@ -19,32 +19,11 @@ async function syncStaffProfileForUser(user) {
 
   try {
     await withTimeout((async () => {
-      const superAdminEmail = import.meta.env.VITE_SUPER_ADMIN_EMAIL;
-      const isSuperAdminUser = !!superAdminEmail && user.email.toLowerCase() === superAdminEmail.toLowerCase();
-
-      const { data: linkedProfile, error: linkError } = await supabase.rpc(
+      const { error: linkError } = await supabase.rpc(
         'link_or_create_staff_profile',
         { p_full_name: user.user_metadata?.full_name || null }
       );
       if (linkError) throw linkError;
-
-      if (isSuperAdminUser && linkedProfile?.id && linkedProfile?.staff_id !== 'RP-0001') {
-        const { data: existing001, error: existing001Error } = await supabase
-          .from('staff_profiles')
-          .select('id')
-          .eq('staff_id', 'RP-0001')
-          .limit(1);
-        if (existing001Error) throw existing001Error;
-
-        const holder = existing001?.[0];
-        if (!holder || holder.id === linkedProfile.id) {
-          const { error } = await supabase
-            .from('staff_profiles')
-            .update({ staff_id: 'RP-0001' })
-            .eq('id', linkedProfile.id);
-          if (error) throw error;
-        }
-      }
     })());
   } catch (error) {
     if (import.meta.env.DEV) {

@@ -11,7 +11,7 @@ import useTimedLoading from '@/hooks/useTimedLoading';
 export default function HRCalendar() {
   const { data: staffList = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['staff-profiles'],
-    queryFn: () => entities.StaffProfile.list('-created_at', 200),
+    queryFn: () => entities.StaffProfile.list('-created_at', 5000),
     retry: false,
     refetchOnWindowFocus: false,
   });

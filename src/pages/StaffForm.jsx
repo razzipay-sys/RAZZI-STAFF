@@ -53,7 +53,7 @@ const normalizeForDb = (record) => {
 };
 
 const emptyForm = {
-  full_name: '', email: '', phone: '', staff_id: '', department: '', role: '',
+  full_name: '', email: '', phone: '', department: '', role: '',
   system_role: '', employment_type: '', work_mode: '', address: '', emergency_contact_name: '',
   emergency_contact_phone: '', next_of_kin_name: '', next_of_kin_phone: '',
   next_of_kin_relationship: '', date_of_birth: '', date_joined: '',
@@ -143,10 +143,36 @@ export default function StaffForm() {
 
   const uploadCvForStaff = async (staffRecord) => {
     const file = cvFileRef.current;
-    if (!file || !staffRecord?.staff_id) return null;
+    if (!file || !staffRecord?.id) return null;
 
     const fileExt = file.name.split('.').pop();
-    const fileName = `${staffRecord.staff_id}/cv-${Date.now()}.${fileExt}`;
+    const fileName = `${staffRecord.id}/cv-${Date.now()}.${fileExt}`;
+
+    const existingCvDocs = await entities.StaffDocument.filter({ staff_profile_id: staffRecord.id, document_type: 'CV' });
+    const existing = existingCvDocs?.[0];
+
+    let docId = existing?.id || null;
+
+    if (docId) {
+      await entities.StaffDocument.update(docId, {
+        staff_profile_id: staffRecord.id,
+        staff_name: staffRecord.full_name,
+        document_type: 'CV',
+        document_name: file.name,
+        document_url: existing.document_url || null,
+        status: 'Pending',
+      });
+    } else {
+      const created = await entities.StaffDocument.create({
+        staff_profile_id: staffRecord.id,
+        staff_name: staffRecord.full_name,
+        document_type: 'CV',
+        document_name: file.name,
+        document_url: null,
+        status: 'Pending',
+      });
+      docId = created?.id || null;
+    }
 
     const { error: uploadError } = await supabase.storage
       .from('staff-documents')
@@ -154,12 +180,9 @@ export default function StaffForm() {
     if (uploadError) throw uploadError;
 
     const { data: { publicUrl } } = supabase.storage.from('staff-documents').getPublicUrl(fileName);
-    const existingCvDocs = await entities.StaffDocument.filter({ staff_id: staffRecord.staff_id, document_type: 'CV' });
-    const existing = existingCvDocs?.[0];
-
-    if (existing?.id) {
-      await entities.StaffDocument.update(existing.id, {
-        staff_id: staffRecord.staff_id,
+    if (docId) {
+      await entities.StaffDocument.update(docId, {
+        staff_profile_id: staffRecord.id,
         staff_name: staffRecord.full_name,
         document_type: 'CV',
         document_name: file.name,
@@ -169,23 +192,7 @@ export default function StaffForm() {
       await logAction({
         actionType: 'UPDATE',
         entityType: 'StaffDocument',
-        entityId: existing.id,
-        entityName: staffRecord.full_name,
-        notes: 'CV updated via staff form',
-      });
-    } else {
-      const created = await entities.StaffDocument.create({
-        staff_id: staffRecord.staff_id,
-        staff_name: staffRecord.full_name,
-        document_type: 'CV',
-        document_name: file.name,
-        document_url: publicUrl,
-        status: 'Submitted',
-      });
-      await logAction({
-        actionType: 'CREATE',
-        entityType: 'StaffDocument',
-        entityId: created?.id,
+        entityId: docId,
         entityName: staffRecord.full_name,
         notes: 'CV uploaded via staff form',
       });
@@ -299,12 +306,11 @@ export default function StaffForm() {
         });
         return updated;
       } else {
-        // Auto-generate Staff ID for new profiles
         const finalData = {
           ...normalizedStaffProfileData,
-          staff_id: null,
         };
         let result;
+        let usedFallbackUpdate = false;
         try {
           result = await withTimeout(
             entities.StaffProfile.create(finalData),
@@ -326,14 +332,13 @@ export default function StaffForm() {
 
           if (lookupError || !existing?.id) throw error;
 
+          usedFallbackUpdate = true;
           result = await withTimeout(
             entities.StaffProfile.update(existing.id, normalizedStaffProfileData),
             REQUEST_TIMEOUT_MS
           );
         }
 
-        await withTimeout(uploadCvForStaff(result), REQUEST_TIMEOUT_MS);
-        
         // Assign system role if provided and user has permission
         if (hasPermission('canManageRoles') && desiredSystemRole && finalData.email) {
           await withTimeout(
@@ -341,13 +346,25 @@ export default function StaffForm() {
             REQUEST_TIMEOUT_MS
           );
         }
+
+        let cvUploadFailed = false;
+        try {
+          await withTimeout(uploadCvForStaff(result), REQUEST_TIMEOUT_MS);
+        } catch (cvError) {
+          cvUploadFailed = true;
+          toast.error(cvError?.message || 'CV upload failed. You can retry from this profile.');
+        }
         
         await logAction({
-          actionType: 'CREATE', entityType: 'StaffProfile',
-          entityId: result?.id, entityName: finalData.full_name,
-          notes: `New staff profile created with ID: ${finalData.staff_id}`
+          actionType: usedFallbackUpdate ? 'UPDATE' : 'CREATE',
+          entityType: 'StaffProfile',
+          entityId: result?.id,
+          entityName: normalizedStaffProfileData.full_name,
+          notes: cvUploadFailed
+            ? `Staff profile saved (CV pending)`
+            : `Staff profile saved`
         });
-        return result;
+        return cvUploadFailed ? { ...result, __cvUploadFailed: true } : result;
       }
     },
     onSuccess: (updatedRecord) => {
@@ -358,6 +375,13 @@ export default function StaffForm() {
       setSaveError('');
       setSaveMessage('Saved');
       setTimeout(() => setSaveMessage(''), 2500);
+
+      if (!editId && updatedRecord?.__cvUploadFailed && updatedRecord?.id) {
+        setSaveMessage('');
+        setSaveError('Profile saved, but CV upload failed. Please retry.');
+        navigate(`/staff/new?edit=${updatedRecord.id}`);
+        return;
+      }
 
       if (editId && updatedRecord) {
         queryClient.setQueryData(['staff-profile', editId], [updatedRecord]);
@@ -491,14 +515,6 @@ export default function StaffForm() {
                     required
                   />
                   {fieldErrors.full_name && <p className="text-xs text-destructive">{fieldErrors.full_name}</p>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Staff ID (Auto-generated)</Label>
-                  <Input 
-                    value={editId ? (form.staff_id || '') : 'Auto-generated on save'} 
-                    disabled 
-                    className="bg-muted font-mono"
-                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="field-email">Email *</Label>

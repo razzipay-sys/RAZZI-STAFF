@@ -1,6 +1,10 @@
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import logoUrl from '@/assets/logo.jpeg';
+import {
+  Document, Packer, Paragraph, Table, TableRow, TableCell,
+  WidthType, TextRun, HeadingLevel, ShadingType,
+} from 'docx';
 
 let logoDataUrlCache = null;
 
@@ -173,7 +177,7 @@ const drawIDCard = ({ doc, staff, logoDataUrl, companyName, appName, photoDataUr
   const name = (staff?.full_name || 'N/A').toString();
   const role = (staff?.role || 'N/A').toString();
   const department = (staff?.department || 'N/A').toString();
-  const staffId = (staff?.staff_id || 'N/A').toString();
+  const staffEmail = (staff?.email || 'N/A').toString();
 
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(225);
@@ -213,10 +217,10 @@ const drawIDCard = ({ doc, staff, logoDataUrl, companyName, appName, photoDataUr
 
   doc.setTextColor(...primary);
   doc.setFontSize(7);
-  doc.text('STAFF ID', 32, 40);
+  doc.text('EMAIL', 32, 40);
   doc.setTextColor(25);
-  doc.setFontSize(9.5);
-  doc.text(staffId, 32, 45);
+  doc.setFontSize(8);
+  doc.text(staffEmail.length > 28 ? staffEmail.slice(0, 27) + '…' : staffEmail, 32, 45);
 
   doc.setDrawColor(180);
   for (let i = 0; i < 18; i += 1) {
@@ -258,8 +262,8 @@ export const exportIDCardToPDF = async (staff, options = {}) => {
 
   drawIDCard({ doc, staff, logoDataUrl, companyName, appName, photoDataUrl });
 
-  const staffId = staff?.staff_id || 'N/A';
-  doc.save(`${filename || `ID_Card_${staffId}`}_${new Date().toISOString().split('T')[0]}.pdf`);
+  const safeName = (staff?.full_name || 'Staff').replace(/\s+/g, '_');
+  doc.save(`${filename || `ID_Card_${safeName}`}_${new Date().toISOString().split('T')[0]}.pdf`);
 };
 
 export const exportIDCardsToPDF = async (staffList, options = {}) => {
@@ -291,4 +295,93 @@ export const exportIDCardsToPDF = async (staffList, options = {}) => {
   }
 
   doc.save(`${filename}_${new Date().toISOString().split('T')[0]}.pdf`);
+};
+
+/**
+ * Exports data to DOCX (Word document) and triggers download
+ * @param {Array} data - Array of objects
+ * @param {Object} options - { title, headers, filename, companyName, appName }
+ */
+export const exportToDocx = async (data, options = {}) => {
+  const {
+    title = 'RazziStaff Report',
+    headers = [],
+    filename = 'report',
+    companyName = 'RazziPay',
+    appName = 'RazziStaff',
+  } = options;
+
+  const tableHeaders = headers.length ? headers : Object.keys(data[0] || {});
+  const primary = '20B2AA';
+
+  const headerRow = new TableRow({
+    children: tableHeaders.map(h =>
+      new TableCell({
+        shading: { fill: primary, type: ShadingType.CLEAR, color: 'auto' },
+        children: [
+          new Paragraph({
+            children: [
+              new TextRun({ text: h.replace(/_/g, ' ').toUpperCase(), bold: true, color: 'FFFFFF', size: 18 }),
+            ],
+          }),
+        ],
+      })
+    ),
+    tableHeader: true,
+  });
+
+  const dataRows = (data || []).map((row, idx) =>
+    new TableRow({
+      children: tableHeaders.map(h =>
+        new TableCell({
+          shading: idx % 2 === 0 ? undefined : { fill: 'F5FFFE', type: ShadingType.CLEAR, color: 'auto' },
+          children: [
+            new Paragraph({
+              children: [new TextRun({ text: String(row[h] ?? ''), size: 18 })],
+            }),
+          ],
+        })
+      ),
+    })
+  );
+
+  const doc = new Document({
+    sections: [
+      {
+        children: [
+          new Paragraph({
+            children: [
+              new TextRun({ text: appName, bold: true, size: 40, color: primary }),
+              new TextRun({ text: `  |  ${companyName}`, size: 24, color: '888888' }),
+            ],
+          }),
+          new Paragraph({
+            children: [
+              new TextRun({ text: `Generated: ${new Date().toLocaleString()}`, size: 16, color: 'AAAAAA' }),
+            ],
+          }),
+          new Paragraph({ text: '' }),
+          new Paragraph({
+            heading: HeadingLevel.HEADING_2,
+            children: [new TextRun({ text: title, bold: true, color: '1A1A2E' })],
+          }),
+          new Paragraph({ text: '' }),
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: [headerRow, ...dataRows],
+          }),
+        ],
+      },
+    ],
+  });
+
+  const blob = await Packer.toBlob(doc);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${filename}_${new Date().toISOString().split('T')[0]}.docx`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 };

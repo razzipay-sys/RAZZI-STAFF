@@ -20,7 +20,7 @@ import useTimedLoading from '@/hooks/useTimedLoading';
 import { toast } from 'sonner';
 import useRoleAccess from '@/lib/useRoleAccess';
 import useAuditLog from '@/lib/useAuditLog';
-import { exportToCSV, exportToPDF } from '@/lib/exportUtils';
+import { exportToCSV, exportToPDF, exportToDocx } from '@/lib/exportUtils';
 import { Download } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
@@ -57,7 +57,7 @@ export default function WorkflowReports() {
 
   const { data: staffList = [] } = useQuery({
     queryKey: ['staff-profiles'],
-    queryFn: () => entities.StaffProfile.list('-created_at', 200),
+    queryFn: () => entities.StaffProfile.list('-created_at', 5000),
   });
 
   const createReport = useMutation({
@@ -65,7 +65,7 @@ export default function WorkflowReports() {
       const staffMatch = staffList.find(s => s.email === user?.email);
       const reportData = {
         ...data,
-        staff_id: staffMatch?.staff_id || '',
+        staff_profile_id: staffMatch?.id || '',
         staff_name: data.staff_name || staffMatch?.full_name || user?.full_name || '',
         department: data.department || staffMatch?.department || '',
       };
@@ -130,11 +130,17 @@ export default function WorkflowReports() {
 
     if (format === 'csv') {
       exportToCSV(dataToExport, 'Workflow_Reports');
+    } else if (format === 'docx') {
+      await exportToDocx(dataToExport, {
+        title: 'Daily Workflow Reports',
+        filename: 'Workflow_Reports',
+        headers: ['Staff', 'Date', 'Task', 'Priority', 'Status', 'Review', 'Hours'],
+      });
     } else {
       exportToPDF(dataToExport, {
         title: 'Daily Workflow Reports',
         filename: 'Workflow_Reports',
-        headers: ['Staff', 'Date', 'Task', 'Priority', 'Status', 'Review', 'Hours']
+        headers: ['Staff', 'Date', 'Task', 'Priority', 'Status', 'Review', 'Hours'],
       });
     }
 
@@ -176,6 +182,7 @@ export default function WorkflowReports() {
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={() => handleExport('csv')}>Export as CSV</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleExport('pdf')}>Export as PDF</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport('docx')}>Export as DOCX</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           )}

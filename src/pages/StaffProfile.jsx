@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import {
-  ArrowLeft, Edit, Mail, Phone, Shield, FileText, Eye, Download, Plus, IdCard
+  ArrowLeft, Edit, Mail, Phone, FileText, Eye, Download, Plus, IdCard
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -23,7 +23,7 @@ import useTimedLoading from '@/hooks/useTimedLoading';
 import { toast } from 'sonner';
 import useRoleAccess from '@/lib/useRoleAccess';
 import useAuditLog from '@/lib/useAuditLog';
-import { exportToCSV, exportToPDF, exportIDCardToPDF } from '@/lib/exportUtils';
+import { exportToCSV, exportToPDF, exportToDocx, exportIDCardToPDF } from '@/lib/exportUtils';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 export default function StaffProfile() {
@@ -47,50 +47,58 @@ export default function StaffProfile() {
   const { showLoader, timedOut } = useTimedLoading(isLoading);
 
   const { data: documents = [] } = useQuery({
-    queryKey: ['staff-documents', staff?.staff_id],
-    queryFn: () => entities.StaffDocument.filter({ staff_id: staff.staff_id }),
-    enabled: !!staff?.staff_id,
+    queryKey: ['staff-documents', staff?.id],
+    queryFn: () => entities.StaffDocument.filter({ staff_profile_id: staff.id }),
+    enabled: !!staff?.id,
   });
 
   const { data: bankDetails = [] } = useQuery({
-    queryKey: ['staff-bank', staff?.staff_id],
-    queryFn: () => entities.StaffBankDetails.filter({ staff_id: staff.staff_id }),
-    enabled: hasPermission('canViewSalary') && !!staff?.staff_id,
+    queryKey: ['staff-bank', staff?.id],
+    queryFn: async () => {
+      if (!staff?.id) return [];
+      const { data, error } = await supabase
+        .from('staff_bank_details')
+        .select('*')
+        .eq('staff_profile_id', staff.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: hasPermission('canViewSalary') && !!staff?.id,
   });
 
   const { data: reports = [] } = useQuery({
-    queryKey: ['staff-reports', staff?.staff_id],
-    queryFn: () => entities.DailyWorkflowReport.filter({ staff_id: staff.staff_id }, '-report_date', 20),
-    enabled: !!staff?.staff_id,
+    queryKey: ['staff-reports', staff?.id],
+    queryFn: () => entities.DailyWorkflowReport.filter({ staff_profile_id: staff.id }, '-report_date', 20),
+    enabled: !!staff?.id,
   });
 
   const uploadDoc = useMutation({
     mutationFn: async (file) => {
-      // Upload to Supabase Storage
       const fileExt = file.name.split('.').pop();
-      const fileName = `${staff.staff_id}/${Date.now()}.${fileExt}`;
+      const fileName = `${staff.id}/${Date.now()}.${fileExt}`;
       const { error: uploadError } = await supabase.storage
         .from('staff-documents')
         .upload(fileName, file, { upsert: true });
       if (uploadError) throw uploadError;
       const { data: { publicUrl } } = supabase.storage.from('staff-documents').getPublicUrl(fileName);
-      const file_url = publicUrl;
       await entities.StaffDocument.create({
-        staff_id: staff.staff_id,
+        staff_profile_id: staff.id,
         staff_name: staff.full_name,
         document_type: newDoc.document_type,
         document_name: newDoc.document_name || file.name,
-        document_url: file_url,
+        document_url: publicUrl,
         status: 'Submitted'
       });
       await logAction({
         actionType: 'CREATE', entityType: 'StaffDocument',
-        entityId: staff.staff_id, entityName: staff.full_name,
+        entityId: staff.id, entityName: staff.full_name,
         notes: `Document uploaded: ${newDoc.document_type}`
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['staff-documents', staff.staff_id] });
+      queryClient.invalidateQueries({ queryKey: ['staff-documents', staff.id] });
       toast.success('Document uploaded');
       setDocDialogOpen(false);
       setNewDoc({ document_type: 'CV', document_name: '', status: 'Pending' });
@@ -107,32 +115,38 @@ export default function StaffProfile() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['staff-documents', staff.staff_id] });
+      queryClient.invalidateQueries({ queryKey: ['staff-documents', staff.id] });
       toast.success('Status updated');
     }
   });
 
-  const handleExportProfile = async (format) => {
-    const dataToExport = [{
-      ID: staff.staff_id,
-      Name: staff.full_name,
-      Email: staff.email,
-      Phone: staff.phone,
-      Department: staff.department,
-      Role: staff.role,
-      Joined: staff.date_joined,
-      Address: staff.address,
-      Emergency_Contact: staff.emergency_contact_name,
-      Emergency_Phone: staff.emergency_contact_phone
-    }];
+  const profileData = [{
+    Name: staff?.full_name,
+    Email: staff?.email,
+    Phone: staff?.phone,
+    Department: staff?.department,
+    Role: staff?.role,
+    Joined: staff?.date_joined,
+    Address: staff?.address,
+    Emergency_Contact: staff?.emergency_contact_name,
+    Emergency_Phone: staff?.emergency_contact_phone,
+  }];
 
+  const handleExportProfile = async (format) => {
+    const safeName = (staff.full_name || 'Staff').replace(/\s+/g, '_');
     if (format === 'csv') {
-      exportToCSV(dataToExport, `Staff_Profile_${staff.staff_id}`);
+      exportToCSV(profileData, `Staff_Profile_${safeName}`);
+    } else if (format === 'docx') {
+      await exportToDocx(profileData, {
+        title: `Staff Profile: ${staff.full_name}`,
+        filename: `Staff_Profile_${safeName}`,
+        headers: ['Name', 'Email', 'Phone', 'Department', 'Role', 'Joined', 'Address'],
+      });
     } else {
-      exportToPDF(dataToExport, { 
-        title: `Staff Profile: ${staff.full_name}`, 
-        filename: `Staff_Profile_${staff.staff_id}`,
-        headers: ['ID', 'Name', 'Email', 'Department', 'Role', 'Joined', 'Phone']
+      exportToPDF(profileData, {
+        title: `Staff Profile: ${staff.full_name}`,
+        filename: `Staff_Profile_${safeName}`,
+        headers: ['Name', 'Email', 'Phone', 'Department', 'Role', 'Joined'],
       });
     }
 
@@ -148,7 +162,8 @@ export default function StaffProfile() {
 
   const handleGenerateIdCard = async () => {
     try {
-      await exportIDCardToPDF(staff, { filename: `ID_Card_${staff.staff_id}` });
+      const safeName = (staff.full_name || 'Staff').replace(/\s+/g, '_');
+      await exportIDCardToPDF(staff, { filename: `ID_Card_${safeName}` });
       await logAction({
         actionType: 'EXPORT',
         entityType: 'StaffProfile',
@@ -210,7 +225,6 @@ export default function StaffProfile() {
               <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                 {staff.email && <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5" /> {staff.email}</span>}
                 {staff.phone && <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5" /> {staff.phone}</span>}
-                {staff.staff_id && <span className="flex items-center gap-1"><Shield className="w-3.5 h-3.5" /> {staff.staff_id}</span>}
               </div>
             </div>
             <div className="flex flex-col sm:flex-row gap-2">
@@ -229,6 +243,7 @@ export default function StaffProfile() {
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={() => handleExportProfile('csv')}>Export as CSV</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleExportProfile('pdf')}>Export as PDF</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleExportProfile('docx')}>Export as DOCX</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}

@@ -2,9 +2,9 @@
   "name": "StaffBankDetails",
   "type": "object",
   "properties": {
-    "staff_id": {
+    "staff_profile_id": {
       "type": "string",
-      "description": "Reference to StaffProfile"
+      "description": "Reference to StaffProfile (UUID id)"
     },
     "staff_name": {
       "type": "string"
@@ -52,7 +52,7 @@
     }
   },
   "required": [
-    "staff_id",
+    "staff_profile_id",
     "bank_name",
     "account_number",
     "account_name"

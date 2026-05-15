@@ -59,7 +59,7 @@ export default function AccessControl() {
 
   const { data: staffList = [], isLoading: loadingStaff, isError: staffError, error: staffErrorData, refetch: refetchStaff } = useQuery({
     queryKey: ['staff-profiles-access'],
-    queryFn: () => entities.StaffProfile.list('-created_at', 500),
+    queryFn: () => entities.StaffProfile.list('-created_at', 5000),
     staleTime: 2 * 60 * 1000,
     retry: false,
     refetchOnWindowFocus: false,
@@ -196,7 +196,6 @@ export default function AccessControl() {
     const q = search.toLowerCase();
     return (
       staff.email?.toLowerCase().includes(q) ||
-      staff.staff_id?.toLowerCase().includes(q) ||
       staff.full_name?.toLowerCase().includes(q) ||
       staff.department?.toLowerCase().includes(q)
     );
@@ -236,7 +235,7 @@ export default function AccessControl() {
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search by staff email, staff ID, full name, or department..."
+            placeholder="Search by email, full name, or department..."
             value={search}
             onChange={event => setSearch(event.target.value)}
             className="pl-10"
@@ -291,7 +290,6 @@ export default function AccessControl() {
               <TableRow className="bg-muted/50">
                 <TableHead>User / Staff</TableHead>
                 <TableHead>Email</TableHead>
-                <TableHead>Staff ID</TableHead>
                 <TableHead>Current Role</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -299,7 +297,7 @@ export default function AccessControl() {
             <TableBody>
               {filteredStaff.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8">
+                  <TableCell colSpan={4} className="text-center py-8">
                     <p className="text-muted-foreground">No matching registered staff/user found.</p>
                   </TableCell>
                 </TableRow>
@@ -317,7 +315,6 @@ export default function AccessControl() {
                         </div>
                       </TableCell>
                       <TableCell className="text-sm">{staff.email}</TableCell>
-                      <TableCell className="text-sm font-mono">{staff.staff_id || 'N/A'}</TableCell>
                       <TableCell>
                         <StatusBadge status={currentRole.replace('_', ' ')} />
                       </TableCell>

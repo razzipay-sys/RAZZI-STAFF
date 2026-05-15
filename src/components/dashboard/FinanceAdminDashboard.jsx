@@ -11,24 +11,32 @@ import useTimedLoading from '@/hooks/useTimedLoading';
 export default function FinanceAdminDashboard() {
   const { data: staffList = [], isLoading: staffLoading } = useQuery({
     queryKey: ['staff-profiles'],
-    queryFn: () => entities.StaffProfile.list('-created_at', 500),
+    queryFn: () => entities.StaffProfile.list('-created_at', 5000),
     staleTime: 5 * 60 * 1000,
   });
 
   const { data: bankDetails = [] } = useQuery({
     queryKey: ['bank-details-incomplete'],
     queryFn: async () => {
-      const details = await entities.StaffBankDetails.list();
+      const details = await entities.StaffBankDetails.list('-created_at', 5000);
       return details;
     },
     staleTime: 5 * 60 * 1000,
   });
   const staffTimed = useTimedLoading(staffLoading);
 
-  const missingBankDetails = staffList.filter(s => {
-    const bd = bankDetails.find(b => b.staff_id === s.staff_id);
-    return !bd || !bd.account_number || !bd.bank_name;
-  });
+  const missingBankDetails = React.useMemo(() => {
+    const byProfileId = new Map(
+      bankDetails
+        .filter(b => b.staff_profile_id)
+        .map(b => [b.staff_profile_id, b])
+    );
+
+    return staffList.filter(s => {
+      const bd = byProfileId.get(s.id);
+      return !bd || !bd.account_number || !bd.bank_name;
+    });
+  }, [bankDetails, staffList]);
 
   const incompleteProfiles = staffList.filter(s => (s.profile_completion_percentage || 0) < 80);
   const incompleteBankRecords = bankDetails.filter(b => !b.account_number || !b.bank_name || !b.account_name);

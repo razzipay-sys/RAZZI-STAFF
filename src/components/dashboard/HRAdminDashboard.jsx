@@ -12,7 +12,7 @@ import useTimedLoading from '@/hooks/useTimedLoading';
 export default function HRAdminDashboard() {
   const { data: staffList = [], isLoading: staffLoading } = useQuery({
     queryKey: ['staff-profiles'],
-    queryFn: () => entities.StaffProfile.list('-created_at', 500),
+    queryFn: () => entities.StaffProfile.list('-created_at', 5000),
     staleTime: 5 * 60 * 1000,
   });
 

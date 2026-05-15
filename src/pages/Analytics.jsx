@@ -15,7 +15,7 @@ const COLORS = ['hsl(174, 72%, 46%)', 'hsl(199, 89%, 48%)', 'hsl(38, 92%, 50%)',
 export default function Analytics() {
   const { data: staffList = [], isLoading: ls, isError: staffError, error: staffErrorData, refetch: refetchStaff } = useQuery({
     queryKey: ['staff-profiles'],
-    queryFn: () => entities.StaffProfile.list('-created_at', 200),
+    queryFn: () => entities.StaffProfile.list('-created_at', 5000),
     retry: false,
     refetchOnWindowFocus: false,
   });

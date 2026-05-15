@@ -26,30 +26,30 @@ export default function StaffDashboard() {
   });
 
   const { data: myReports = [], isLoading: reportsLoading } = useQuery({
-    queryKey: ['my-reports', profile?.staff_id],
-    queryFn: () => entities.DailyWorkflowReport.filter({ 
-      staff_id: profile.staff_id 
+    queryKey: ['my-reports', profile?.id],
+    queryFn: () => entities.DailyWorkflowReport.filter({
+      staff_profile_id: profile.id
     }, '-report_date', 10),
-    enabled: !!profile?.staff_id,
+    enabled: !!profile?.id,
     staleTime: 2 * 60 * 1000,
   });
 
   const { data: myPendingReviews = [] } = useQuery({
-    queryKey: ['my-pending-reviews', profile?.staff_id],
+    queryKey: ['my-pending-reviews', profile?.id],
     queryFn: async () => {
-      const reports = await entities.DailyWorkflowReport.filter({ 
-        staff_id: profile.staff_id 
+      const reports = await entities.DailyWorkflowReport.filter({
+        staff_profile_id: profile.id
       });
       return reports.filter(r => r.review_status === 'Pending Review');
     },
-    enabled: !!profile?.staff_id,
+    enabled: !!profile?.id,
     staleTime: 2 * 60 * 1000,
   });
 
   const { data: myDocuments = [] } = useQuery({
-    queryKey: ['my-documents', profile?.staff_id],
-    queryFn: () => entities.StaffDocument.filter({ staff_id: profile.staff_id }),
-    enabled: !!profile?.staff_id,
+    queryKey: ['my-documents', profile?.id],
+    queryFn: () => entities.StaffDocument.filter({ staff_profile_id: profile.id }),
+    enabled: !!profile?.id,
     staleTime: 2 * 60 * 1000,
   });
 

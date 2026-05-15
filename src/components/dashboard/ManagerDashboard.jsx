@@ -20,7 +20,7 @@ export default function ManagerDashboard() {
 
   const { data: staffList = [], isLoading: staffLoading } = useQuery({
     queryKey: ['staff-profiles'],
-    queryFn: () => entities.StaffProfile.list('-created_at', 500),
+    queryFn: () => entities.StaffProfile.list('-created_at', 5000),
     staleTime: 5 * 60 * 1000,
   });
 
@@ -29,8 +29,8 @@ export default function ManagerDashboard() {
   const pendingReview = todayReports.filter(r => r.review_status === 'Pending Review');
   const staffTimed = useTimedLoading(staffLoading);
   const reportsTimed = useTimedLoading(reportsLoading);
-  const reportingStaff = new Set(todayReports.map(r => r.staff_id).filter(Boolean));
-  const lateReports = staffList.filter(s => s.staff_id && !reportingStaff.has(s.staff_id));
+  const reportingStaff = new Set(todayReports.map(r => r.staff_profile_id).filter(Boolean));
+  const lateReports = staffList.filter(s => !reportingStaff.has(s.id));
 
   return (
     <div className="space-y-8 animate-fade-in">

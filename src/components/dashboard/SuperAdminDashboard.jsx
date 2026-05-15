@@ -16,7 +16,7 @@ import useTimedLoading from '@/hooks/useTimedLoading';
 export default function SuperAdminDashboard() {
   const { data: staffList = [], isLoading: staffLoading, error: staffError } = useQuery({
     queryKey: ['staff-profiles'],
-    queryFn: () => entities.StaffProfile.list('-created_at', 500),
+    queryFn: () => entities.StaffProfile.list('-created_at', 5000),
     staleTime: 5 * 60 * 1000,
   });
 
@@ -39,7 +39,7 @@ export default function SuperAdminDashboard() {
   const { data: bankDetails = [] } = useQuery({
     queryKey: ['bank-details-incomplete'],
     queryFn: async () => {
-      const details = await entities.StaffBankDetails.list();
+      const details = await entities.StaffBankDetails.list('-created_at', 5000);
       return details.filter(b => !b.account_number || !b.bank_name);
     },
     staleTime: 5 * 60 * 1000,

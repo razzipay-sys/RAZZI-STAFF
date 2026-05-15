@@ -6,10 +6,6 @@
       "type": "string",
       "description": "Linked app user ID if applicable"
     },
-    "staff_id": {
-      "type": "string",
-      "description": "Unique staff identifier"
-    },
     "full_name": {
       "type": "string",
       "description": "Full name of staff"

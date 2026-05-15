@@ -9,7 +9,6 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE IF NOT EXISTS staff_profiles (
   id                          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id                     TEXT, -- References auth.users(id) as text
-  staff_id                    TEXT UNIQUE, -- custom company ID (e.g. RP-0001)
   full_name                   TEXT NOT NULL,
   email                       TEXT NOT NULL UNIQUE,
   phone                       TEXT,
@@ -32,7 +31,7 @@ CREATE TABLE IF NOT EXISTS staff_profiles (
   probation_start_date        DATE,
   probation_end_date          DATE,
   employment_status           TEXT NOT NULL DEFAULT 'Active' CHECK (employment_status IN ('Active','Suspended','Resigned','Terminated','On Leave')),
-  manager_id                  TEXT, -- references another staff_profiles(staff_id)
+  manager_id                  UUID REFERENCES staff_profiles(id), -- references another staff_profiles(id)
   manager_name                TEXT,
   staff_bio                   TEXT,
   skills                      TEXT[],
@@ -42,26 +41,6 @@ CREATE TABLE IF NOT EXISTS staff_profiles (
   created_at                  TIMESTAMPTZ DEFAULT NOW(),
   updated_at                  TIMESTAMPTZ DEFAULT NOW()
 );
-
--- ─── staff_id generation (atomic, non-repeating) ────────────
-CREATE SEQUENCE IF NOT EXISTS public.staff_id_seq START 2;
-
-CREATE OR REPLACE FUNCTION public.next_staff_id()
-RETURNS TEXT
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  next_num BIGINT;
-BEGIN
-  next_num := nextval('public.staff_id_seq');
-  IF next_num < 2 THEN
-    next_num := nextval('public.staff_id_seq');
-  END IF;
-  RETURN 'RP-' || lpad(next_num::text, 4, '0');
-END;
-$$;
 
 -- Link (or create) a staff profile for the authenticated user using their JWT email.
 -- This prevents duplicate email inserts and allows first-login profile creation without relaxing RLS.
@@ -83,14 +62,13 @@ BEGIN
     RAISE EXCEPTION 'Missing authenticated email';
   END IF;
 
-  INSERT INTO public.staff_profiles (user_id, email, full_name, role, employment_status, staff_id)
+  INSERT INTO public.staff_profiles (user_id, email, full_name, role, employment_status)
   VALUES (
     auth.uid()::text,
     normalized_email,
     COALESCE(NULLIF(trim(p_full_name), ''), split_part(normalized_email, '@', 1)),
     'user',
-    'Active',
-    NULL
+    'Active'
   )
   ON CONFLICT (email) DO UPDATE
     SET user_id = EXCLUDED.user_id,
@@ -107,60 +85,29 @@ BEGIN
     LIMIT 1;
   END IF;
 
+  -- Auto-assign 'user' role on first sign-in without overwriting existing roles
+  INSERT INTO public.user_roles (user_id, email, role, assigned_by, assigned_at)
+  VALUES (auth.uid(), normalized_email, 'user', 'system', NOW())
+  ON CONFLICT (email) DO UPDATE
+    SET user_id = EXCLUDED.user_id,
+        updated_at = NOW()
+    WHERE public.user_roles.user_id IS NULL;
+
   RETURN profile;
 END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.link_or_create_staff_profile(TEXT) TO authenticated;
 
-CREATE OR REPLACE FUNCTION public.assign_staff_id()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  IF NEW.staff_id IS NULL OR NEW.staff_id = '' THEN
-    NEW.staff_id := public.next_staff_id();
-  END IF;
-  RETURN NEW;
-END;
-$$;
 
-DO $$
-BEGIN
-  IF to_regclass('public.staff_profiles') IS NOT NULL THEN
-    IF NOT EXISTS (
-      SELECT 1
-      FROM pg_trigger
-      WHERE tgname = 'trg_staff_profiles_assign_staff_id'
-        AND tgrelid = 'public.staff_profiles'::regclass
-    ) THEN
-      CREATE TRIGGER trg_staff_profiles_assign_staff_id
-      BEFORE INSERT ON public.staff_profiles
-      FOR EACH ROW
-      EXECUTE FUNCTION public.assign_staff_id();
-    END IF;
-  END IF;
-END
-$$;
 
-DO $$
-DECLARE
-  max_num BIGINT;
-BEGIN
-  IF to_regclass('public.staff_profiles') IS NOT NULL THEN
-    SELECT COALESCE(MAX(NULLIF(regexp_replace(staff_id, '^RP-', ''), '')::BIGINT), 1)
-    INTO max_num
-    FROM public.staff_profiles
-    WHERE staff_id ~ '^RP-[0-9]+$';
 
-    IF max_num < 2 THEN
-      max_num := 1;
-    END IF;
 
-    PERFORM setval('public.staff_id_seq', GREATEST(max_num, 1));
-  END IF;
-END
-$$;
+
+
+
+
+
 
 DO $$
 BEGIN
@@ -184,7 +131,7 @@ $$;
 -- ─── staff_bank_details ────────────────────────────────────
 CREATE TABLE IF NOT EXISTS staff_bank_details (
   id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  staff_id             TEXT NOT NULL REFERENCES staff_profiles(staff_id) ON DELETE CASCADE,
+  staff_profile_id     UUID NOT NULL REFERENCES staff_profiles(id) ON DELETE CASCADE,
   staff_name           TEXT,
   bank_name            TEXT NOT NULL,
   account_number       TEXT NOT NULL,
@@ -201,10 +148,134 @@ CREATE TABLE IF NOT EXISTS staff_bank_details (
   updated_at           TIMESTAMPTZ DEFAULT NOW()
 );
 
+DO $$
+BEGIN
+  IF to_regclass('public.staff_bank_details') IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'staff_bank_details'
+        AND column_name = 'staff_profile_id'
+    ) THEN
+      ALTER TABLE public.staff_bank_details
+      ADD COLUMN staff_profile_id UUID REFERENCES public.staff_profiles(id) ON DELETE CASCADE;
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'staff_bank_details'
+        AND column_name = 'staff_id'
+    ) AND EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'staff_profiles'
+        AND column_name = 'staff_id'
+    ) THEN
+      UPDATE public.staff_bank_details bd
+      SET staff_profile_id = sp.id
+      FROM public.staff_profiles sp
+      WHERE bd.staff_profile_id IS NULL
+        AND bd.staff_id IS NOT NULL
+        AND lower(bd.staff_id) = lower(sp.staff_id);
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1
+      FROM public.staff_bank_details
+      WHERE staff_profile_id IS NULL
+    ) THEN
+      ALTER TABLE public.staff_bank_details
+      ALTER COLUMN staff_profile_id SET NOT NULL;
+    END IF;
+
+    EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_bank_details_staff_profile_id_unique ON public.staff_bank_details(staff_profile_id)';
+  END IF;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION public.sync_staff_bank_details_fields()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  p RECORD;
+BEGIN
+  SELECT id, full_name
+  INTO p
+  FROM public.staff_profiles
+  WHERE id = NEW.staff_profile_id
+  LIMIT 1;
+
+  IF p.id IS NOT NULL THEN
+    NEW.staff_name := COALESCE(NULLIF(NEW.staff_name, ''), p.full_name);
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DO $$
+BEGIN
+  IF to_regclass('public.staff_bank_details') IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1
+      FROM pg_trigger
+      WHERE tgname = 'trg_staff_bank_details_sync_fields'
+        AND tgrelid = 'public.staff_bank_details'::regclass
+    ) THEN
+      CREATE TRIGGER trg_staff_bank_details_sync_fields
+      BEFORE INSERT OR UPDATE ON public.staff_bank_details
+      FOR EACH ROW
+      EXECUTE FUNCTION public.sync_staff_bank_details_fields();
+    END IF;
+  END IF;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION public.sync_bank_details_on_profile_update()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  UPDATE public.staff_bank_details
+  SET staff_name = COALESCE(staff_name, NEW.full_name),
+      updated_at = NOW()
+  WHERE staff_profile_id = NEW.id;
+
+  RETURN NEW;
+END;
+$$;
+
+DO $$
+BEGIN
+  IF to_regclass('public.staff_profiles') IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1
+      FROM pg_trigger
+      WHERE tgname = 'trg_staff_profiles_sync_bank_details'
+        AND tgrelid = 'public.staff_profiles'::regclass
+    ) THEN
+      CREATE TRIGGER trg_staff_profiles_sync_bank_details
+      AFTER UPDATE OF full_name ON public.staff_profiles
+      FOR EACH ROW
+      EXECUTE FUNCTION public.sync_bank_details_on_profile_update();
+    END IF;
+  END IF;
+END
+$$;
+
 -- ─── staff_documents ───────────────────────────────────────
 CREATE TABLE IF NOT EXISTS staff_documents (
   id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  staff_id       TEXT NOT NULL REFERENCES staff_profiles(staff_id) ON DELETE CASCADE,
+  staff_profile_id UUID NOT NULL REFERENCES staff_profiles(id) ON DELETE CASCADE,
   staff_name     TEXT,
   document_type  TEXT CHECK (document_type IN ('CV','ID Card','Offer Letter','Appointment Letter','Confirmation Letter','NDA','Contract','Certificate','Other')),
   document_name  TEXT,
@@ -220,7 +291,7 @@ CREATE TABLE IF NOT EXISTS staff_documents (
 -- ─── daily_workflow_reports ────────────────────────────────
 CREATE TABLE IF NOT EXISTS daily_workflow_reports (
   id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  staff_id            TEXT NOT NULL REFERENCES staff_profiles(staff_id) ON DELETE CASCADE,
+  staff_profile_id    UUID NOT NULL REFERENCES staff_profiles(id) ON DELETE CASCADE,
   staff_name          TEXT NOT NULL,
   department          TEXT,
   report_date         DATE NOT NULL,
@@ -238,7 +309,7 @@ CREATE TABLE IF NOT EXISTS daily_workflow_reports (
   clock_in_time       TEXT,
   clock_out_time      TEXT,
   compliance_status   TEXT CHECK (compliance_status IN ('Compliant','Late','Absent','Incomplete Report','Pending Review')),
-  supervisor_id       TEXT,
+  supervisor_id       UUID REFERENCES staff_profiles(id),
   supervisor_name     TEXT,
   supervisor_comment  TEXT,
   review_status       TEXT DEFAULT 'Pending Review' CHECK (review_status IN ('Pending Review','Approved','Needs Correction','Rejected')),
@@ -298,11 +369,57 @@ CREATE TABLE IF NOT EXISTS app_settings (
 
 -- ─── Indexes ───────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_staff_profiles_email ON staff_profiles(email);
-CREATE INDEX IF NOT EXISTS idx_staff_profiles_staff_id ON staff_profiles(staff_id);
 CREATE INDEX IF NOT EXISTS idx_staff_profiles_department ON staff_profiles(department);
 CREATE INDEX IF NOT EXISTS idx_staff_profiles_status ON staff_profiles(employment_status);
-CREATE INDEX IF NOT EXISTS idx_workflow_reports_staff_date ON daily_workflow_reports(staff_id, report_date);
-CREATE INDEX IF NOT EXISTS idx_documents_staff_id ON staff_documents(staff_id);
+DO $$
+BEGIN
+  IF to_regclass('public.daily_workflow_reports') IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'daily_workflow_reports'
+        AND column_name = 'staff_profile_id'
+    ) THEN
+      ALTER TABLE public.daily_workflow_reports
+      ADD COLUMN staff_profile_id UUID REFERENCES public.staff_profiles(id) ON DELETE CASCADE;
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'daily_workflow_reports'
+        AND column_name = 'staff_profile_id'
+    ) THEN
+      EXECUTE 'CREATE INDEX IF NOT EXISTS idx_workflow_reports_staff_date ON public.daily_workflow_reports(staff_profile_id, report_date)';
+    END IF;
+  END IF;
+
+  IF to_regclass('public.staff_documents') IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'staff_documents'
+        AND column_name = 'staff_profile_id'
+    ) THEN
+      ALTER TABLE public.staff_documents
+      ADD COLUMN staff_profile_id UUID REFERENCES public.staff_profiles(id) ON DELETE CASCADE;
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'staff_documents'
+        AND column_name = 'staff_profile_id'
+    ) THEN
+      EXECUTE 'CREATE INDEX IF NOT EXISTS idx_documents_staff_profile_id ON public.staff_documents(staff_profile_id)';
+    END IF;
+  END IF;
+END
+$$;
 CREATE INDEX IF NOT EXISTS idx_audit_logs_performed_by ON audit_logs(performed_by);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
 
@@ -355,6 +472,10 @@ AS $$
 $$;
 
 -- staff_profiles policies
+DROP POLICY IF EXISTS "profiles_select" ON staff_profiles;
+DROP POLICY IF EXISTS "profiles_insert" ON staff_profiles;
+DROP POLICY IF EXISTS "profiles_update" ON staff_profiles;
+
 CREATE POLICY "profiles_select" ON staff_profiles FOR SELECT TO authenticated
   USING (true); -- Everyone can see basic profile info
 
@@ -366,25 +487,40 @@ CREATE POLICY "profiles_update" ON staff_profiles FOR UPDATE TO authenticated
   WITH CHECK (get_user_role() IN ('super_admin', 'admin', 'hr_admin') OR auth.uid()::text = user_id);
 
 -- staff_bank_details policies
+DROP POLICY IF EXISTS "bank_select" ON staff_bank_details;
+DROP POLICY IF EXISTS "bank_modify" ON staff_bank_details;
+
 CREATE POLICY "bank_select" ON staff_bank_details FOR SELECT TO authenticated
-  USING (get_user_role() IN ('super_admin', 'finance_admin') OR staff_id = (SELECT staff_id FROM staff_profiles WHERE user_id = auth.uid()::text));
+  USING (
+    get_user_role() IN ('super_admin', 'admin', 'hr_admin', 'finance_admin')
+    OR staff_profile_id = (SELECT id FROM staff_profiles WHERE user_id = auth.uid()::text LIMIT 1)
+  );
 
 CREATE POLICY "bank_modify" ON staff_bank_details FOR ALL TO authenticated
-  USING (get_user_role() IN ('super_admin', 'finance_admin'));
+  USING (get_user_role() IN ('super_admin', 'admin', 'hr_admin', 'finance_admin'))
+  WITH CHECK (get_user_role() IN ('super_admin', 'admin', 'hr_admin', 'finance_admin'));
 
 -- staff_documents policies
+DROP POLICY IF EXISTS "docs_select" ON staff_documents;
+DROP POLICY IF EXISTS "docs_modify" ON staff_documents;
+
 CREATE POLICY "docs_select" ON staff_documents FOR SELECT TO authenticated
-  USING (get_user_role() IN ('super_admin', 'admin', 'hr_admin') OR staff_id = (SELECT staff_id FROM staff_profiles WHERE user_id = auth.uid()::text));
+  USING (get_user_role() IN ('super_admin', 'admin', 'hr_admin') OR staff_profile_id = (SELECT id FROM staff_profiles WHERE user_id = auth.uid()::text));
 
 CREATE POLICY "docs_modify" ON staff_documents FOR ALL TO authenticated
-  USING (get_user_role() IN ('super_admin', 'admin', 'hr_admin') OR staff_id = (SELECT staff_id FROM staff_profiles WHERE user_id = auth.uid()::text));
+  USING (get_user_role() IN ('super_admin', 'admin', 'hr_admin') OR staff_profile_id = (SELECT id FROM staff_profiles WHERE user_id = auth.uid()::text))
+  WITH CHECK (get_user_role() IN ('super_admin', 'admin', 'hr_admin') OR staff_profile_id = (SELECT id FROM staff_profiles WHERE user_id = auth.uid()::text));
 
 -- daily_workflow_reports policies
+DROP POLICY IF EXISTS "workflow_select" ON daily_workflow_reports;
+DROP POLICY IF EXISTS "workflow_modify" ON daily_workflow_reports;
+
 CREATE POLICY "workflow_select" ON daily_workflow_reports FOR SELECT TO authenticated
-  USING (get_user_role() IN ('super_admin', 'admin', 'manager') OR staff_id = (SELECT staff_id FROM staff_profiles WHERE user_id = auth.uid()::text));
+  USING (get_user_role() IN ('super_admin', 'admin', 'manager') OR staff_profile_id = (SELECT id FROM staff_profiles WHERE user_id = auth.uid()::text));
 
 CREATE POLICY "workflow_modify" ON daily_workflow_reports FOR ALL TO authenticated
-  USING (staff_id = (SELECT staff_id FROM staff_profiles WHERE user_id = auth.uid()::text) OR get_user_role() IN ('super_admin', 'admin', 'manager'));
+  USING (staff_profile_id = (SELECT id FROM staff_profiles WHERE user_id = auth.uid()::text) OR get_user_role() IN ('super_admin', 'admin', 'manager'))
+  WITH CHECK (staff_profile_id = (SELECT id FROM staff_profiles WHERE user_id = auth.uid()::text) OR get_user_role() IN ('super_admin', 'admin', 'manager'));
 
 -- user_roles policies
 DROP POLICY IF EXISTS "roles_select" ON user_roles;
@@ -427,6 +563,9 @@ DO UPDATE SET
   updated_at = NOW();
 
 -- audit_logs policies
+DROP POLICY IF EXISTS "audit_select" ON audit_logs;
+DROP POLICY IF EXISTS "audit_insert" ON audit_logs;
+
 CREATE POLICY "audit_select" ON audit_logs FOR SELECT TO authenticated
   USING (get_user_role() IN ('super_admin', 'admin'));
 
@@ -434,8 +573,12 @@ CREATE POLICY "audit_insert" ON audit_logs FOR INSERT TO authenticated
   WITH CHECK (true);
 
 -- app_settings policies
+DROP POLICY IF EXISTS "settings_select" ON app_settings;
+DROP POLICY IF EXISTS "settings_modify" ON app_settings;
+
 CREATE POLICY "settings_select" ON app_settings FOR SELECT TO authenticated
   USING (true);
 
 CREATE POLICY "settings_modify" ON app_settings FOR ALL TO authenticated
-  USING (get_user_role() IN ('super_admin', 'admin'));
+  USING (get_user_role() IN ('super_admin', 'admin'))
+  WITH CHECK (get_user_role() IN ('super_admin', 'admin'));

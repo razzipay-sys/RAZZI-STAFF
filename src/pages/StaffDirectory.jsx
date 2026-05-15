@@ -22,7 +22,7 @@ import DataState from '@/components/ui/DataState';
 import useTimedLoading from '@/hooks/useTimedLoading';
 import useRoleAccess from '@/lib/useRoleAccess';
 import useAuditLog from '@/lib/useAuditLog';
-import { exportToCSV, exportToPDF, exportIDCardsToPDF } from '@/lib/exportUtils';
+import { exportToCSV, exportToPDF, exportToDocx, exportIDCardsToPDF } from '@/lib/exportUtils';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 
@@ -60,7 +60,7 @@ export default function StaffDirectory() {
 
   const { data: staffList = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['staff-profiles'],
-    queryFn: () => entities.StaffProfile.list('-created_at', 200),
+    queryFn: () => entities.StaffProfile.list('-created_at', 5000),
     retry: false,
     refetchOnWindowFocus: false,
   });
@@ -78,8 +78,8 @@ export default function StaffDirectory() {
     if (!missingCvOnly) return new Set();
     return new Set(
       allDocuments
-        .filter(d => d.document_type === 'CV' && d.staff_id)
-        .map(d => d.staff_id)
+        .filter(d => d.document_type === 'CV' && d.staff_profile_id)
+        .map(d => d.staff_profile_id)
     );
   }, [allDocuments, missingCvOnly]);
 
@@ -89,14 +89,13 @@ export default function StaffDirectory() {
         s.full_name?.toLowerCase().includes(search.toLowerCase()) ||
         s.email?.toLowerCase().includes(search.toLowerCase()) ||
         s.phone?.includes(search) ||
-        s.staff_id?.toLowerCase().includes(search.toLowerCase()) ||
         s.department?.toLowerCase().includes(search.toLowerCase());
       const matchDept = department === 'All' || s.department === department;
       const matchStatus = status === 'All' || s.employment_status === status;
       const matchMode = workMode === 'All' || s.work_mode === workMode;
       const matchType = empType === 'All' || s.employment_type === empType;
       const matchConfirmation = confirmationStatus === 'All' || s.confirmation_status === confirmationStatus;
-      const matchMissingCv = !missingCvOnly || !staffWithCv.has(s.staff_id);
+      const matchMissingCv = !missingCvOnly || !staffWithCv.has(s.id);
       return matchSearch && matchDept && matchStatus && matchMode && matchType && matchConfirmation && matchMissingCv;
     });
   }, [staffList, search, department, status, workMode, empType, confirmationStatus, missingCvOnly, staffWithCv]);
@@ -110,7 +109,6 @@ export default function StaffDirectory() {
 
   const handleExport = async (format) => {
     const dataToExport = filtered.map(s => ({
-      ID: s.staff_id,
       Name: s.full_name,
       Email: s.email,
       Phone: s.phone,
@@ -121,13 +119,21 @@ export default function StaffDirectory() {
       Joined: s.date_joined
     }));
 
+    const exportHeaders = ['Name', 'Email', 'Phone', 'Department', 'Role', 'Status', 'Mode', 'Joined'];
+
     if (format === 'csv') {
       exportToCSV(dataToExport, 'Staff_Directory');
-    } else {
-      exportToPDF(dataToExport, { 
-        title: 'Staff Directory Report', 
+    } else if (format === 'docx') {
+      await exportToDocx(dataToExport, {
+        title: 'Staff Directory Report',
         filename: 'Staff_Directory',
-        headers: ['ID', 'Name', 'Email', 'Phone', 'Department', 'Role', 'Status', 'Mode', 'Joined']
+        headers: exportHeaders,
+      });
+    } else {
+      exportToPDF(dataToExport, {
+        title: 'Staff Directory Report',
+        filename: 'Staff_Directory',
+        headers: exportHeaders,
       });
     }
 
@@ -167,7 +173,7 @@ export default function StaffDirectory() {
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input 
-            placeholder="Search by name, email, phone, ID..." 
+            placeholder="Search by name, email, phone, department..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="pl-10"
@@ -184,6 +190,7 @@ export default function StaffDirectory() {
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={() => handleExport('csv')}>Export as CSV</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleExport('pdf')}>Export as PDF</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport('docx')}>Export as DOCX</DropdownMenuItem>
                 <DropdownMenuItem onClick={handleIdCardsExport}>Generate ID Cards (PDF)</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
