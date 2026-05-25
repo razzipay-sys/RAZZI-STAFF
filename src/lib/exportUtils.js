@@ -30,14 +30,8 @@ const getRemoteImageDataUrl = async (url) => {
   return toDataUrl(blob);
 };
 
-/**
- * Exports data to CSV and triggers download
- * @param {Array} data - Array of objects
- * @param {string} filename - Filename without extension
- */
 export const exportToCSV = (data, filename) => {
   if (!data || !data.length) return;
-  
   const headers = Object.keys(data[0]);
   const csvContent = [
     headers.join(','),
@@ -46,7 +40,6 @@ export const exportToCSV = (data, filename) => {
       return `"${val.toString().replace(/"/g, '""')}"`;
     }).join(','))
   ].join('\n');
-
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
   const url = URL.createObjectURL(blob);
@@ -58,11 +51,6 @@ export const exportToCSV = (data, filename) => {
   document.body.removeChild(link);
 };
 
-/**
- * Exports data to PDF and triggers download
- * @param {Array} data - Array of objects
- * @param {Object} options - { title, headers, filename }
- */
 export const exportToPDF = async (data, options = {}) => {
   const {
     title = 'RazziStaff Report',
@@ -75,11 +63,7 @@ export const exportToPDF = async (data, options = {}) => {
 
   const doc = new jsPDF();
   let logoDataUrl = null;
-  try {
-    logoDataUrl = await getLogoDataUrl();
-  } catch {
-    logoDataUrl = null;
-  }
+  try { logoDataUrl = await getLogoDataUrl(); } catch { logoDataUrl = null; }
 
   const primary = [32, 178, 170];
   const headerHeight = 30;
@@ -90,27 +74,19 @@ export const exportToPDF = async (data, options = {}) => {
     const pageWidth = doc.internal.pageSize.getWidth();
     const left = 14;
     const top = 12;
-
-    if (logoDataUrl) {
-      doc.addImage(logoDataUrl, 'JPEG', left, top - 4, 14, 14);
-    }
-
+    if (logoDataUrl) doc.addImage(logoDataUrl, 'JPEG', left, top - 4, 14, 14);
     doc.setFontSize(14);
     doc.setTextColor(...primary);
     doc.text(appName, left + 18, top + 2);
-
     doc.setFontSize(9);
     doc.setTextColor(90);
     doc.text(`${companyName} • ${subtitle}`, left + 18, top + 8);
-
     doc.setFontSize(8);
     doc.setTextColor(120);
     doc.text(`Generated: ${new Date().toLocaleString()}`, pageWidth - 14, top + 8, { align: 'right' });
-
     doc.setDrawColor(...primary);
     doc.setLineWidth(0.6);
     doc.line(left, headerHeight, pageWidth - 14, headerHeight);
-
     doc.setFontSize(16);
     doc.setTextColor(0);
     doc.text(title, left, headerHeight + 10);
@@ -140,127 +116,284 @@ export const exportToPDF = async (data, options = {}) => {
   doc.save(`${filename}_${new Date().toISOString().split('T')[0]}.pdf`);
 };
 
-const drawIDCard = ({ doc, staff, logoDataUrl, companyName, appName, photoDataUrl }) => {
-  const primary = [32, 178, 170];
-  const accent = [25, 118, 210];
+// ─── ID Card – Front ──────────────────────────────────────────────────────────
 
-  doc.setFillColor(246, 248, 252);
-  doc.roundedRect(1.5, 1.5, 83, 51, 4, 4, 'F');
-
-  doc.setDrawColor(220);
-  doc.setLineWidth(0.3);
-  doc.roundedRect(1.5, 1.5, 83, 51, 4, 4, 'S');
-
-  doc.setFillColor(...primary);
-  doc.roundedRect(1.5, 1.5, 83, 11, 4, 4, 'F');
-  doc.setFillColor(...accent);
-  doc.rect(1.5, 12.5, 83, 1.2, 'F');
-
-  doc.setFillColor(...primary);
-  doc.setDrawColor(...primary);
-  doc.triangle(63, 13.7, 84.5, 13.7, 84.5, 33);
-  doc.setFillColor(...accent);
-  doc.setDrawColor(...accent);
-  doc.triangle(68, 13.7, 84.5, 13.7, 84.5, 28);
-
-  if (logoDataUrl) {
-    doc.addImage(logoDataUrl, 'JPEG', 5, 3.2, 7.5, 7.5);
-  }
-
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(10);
-  doc.text(appName, 14, 8);
-
-  doc.setFontSize(6.5);
-  doc.text(companyName, 81.5, 8, { align: 'right' });
-
-  const name = (staff?.full_name || 'N/A').toString();
-  const role = (staff?.role || 'N/A').toString();
-  const department = (staff?.department || 'N/A').toString();
-  const staffEmail = (staff?.email || 'N/A').toString();
-
-  doc.setFillColor(255, 255, 255);
-  doc.setDrawColor(225);
-  doc.roundedRect(5, 17, 21, 21, 5, 5, 'FD');
-
-  if (photoDataUrl) {
-    const type = photoDataUrl.includes('image/png') ? 'PNG' : 'JPEG';
-    doc.addImage(photoDataUrl, type, 6, 18, 19, 19);
-  } else {
-    const initials = name
-      .split(' ')
-      .filter(Boolean)
-      .map(part => part[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
-    doc.setTextColor(90);
-    doc.setFontSize(14);
-    doc.text(initials || '??', 15.5, 30, { align: 'center' });
-  }
-
-  doc.setTextColor(20);
-  doc.setFontSize(10.5);
-  doc.text(name, 29, 23, { maxWidth: 52 });
-
-  doc.setTextColor(80);
-  doc.setFontSize(8);
-  doc.text(role, 29, 28, { maxWidth: 52 });
-
-  doc.setTextColor(110);
-  doc.setFontSize(7.5);
-  doc.text(department, 29, 32, { maxWidth: 52 });
-
-  doc.setFillColor(255, 255, 255);
-  doc.setDrawColor(230);
-  doc.roundedRect(29, 36, 52, 10.5, 3, 3, 'FD');
-
-  doc.setTextColor(...primary);
-  doc.setFontSize(7);
-  doc.text('EMAIL', 32, 40);
-  doc.setTextColor(25);
-  doc.setFontSize(8);
-  doc.text(staffEmail.length > 28 ? staffEmail.slice(0, 27) + '…' : staffEmail, 32, 45);
-
-  doc.setDrawColor(180);
-  for (let i = 0; i < 18; i += 1) {
-    const x = 61 + i * 1.1;
-    const h = i % 3 === 0 ? 6 : 4;
-    doc.setLineWidth(i % 2 === 0 ? 0.5 : 0.25);
-    doc.line(x, 39.5, x, 39.5 + h);
-  }
-
-  doc.setTextColor(130);
-  doc.setFontSize(6.5);
-  doc.text('Property of the company • If found, return to HR', 5, 50.5);
+const ROLE_BADGE_COLORS = {
+  super_admin:   [139, 92, 246],
+  admin:         [59, 130, 246],
+  hr_admin:      [236, 72, 153],
+  finance_admin: [245, 158, 11],
+  manager:       [16, 185, 129],
+  user:          [100, 116, 139],
 };
+
+const drawIDCardFront = ({ doc, staff, logoDataUrl, companyName, appName, photoDataUrl }) => {
+  const W = 86;
+  const H = 54;
+
+  const navy     = [15, 23, 42];
+  const teal     = [32, 178, 170];
+  const tealSoft = [226, 248, 246];
+  const tealMid  = [178, 228, 226];
+  const white    = [255, 255, 255];
+  const textMain = [15, 23, 42];
+  const textSub  = [100, 116, 139];
+  const border   = [214, 226, 231];
+
+  const fullName  = (staff?.full_name || 'N/A').toString();
+  const role      = (staff?.role || 'Staff').toString();
+  const dept      = (staff?.department || 'N/A').toString();
+  const email     = (staff?.email || '').toString();
+  const empNo     = staff?.id
+    ? staff.id.replace(/-/g, '').slice(0, 10).toUpperCase()
+    : '----------';
+  const roleKey   = role.toLowerCase().replace(/\s+/g, '_');
+  const badgeRgb  = ROLE_BADGE_COLORS[roleKey] || teal;
+  const roleLabel = role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+  // ── Card background ──────────────────────────────────────────────
+  doc.setFillColor(248, 251, 253);
+  doc.roundedRect(0, 0, W, H, 4, 4, 'F');
+
+  // Soft geometric circles (top-right accent)
+  doc.setFillColor(...tealSoft);
+  doc.circle(W + 2, -2, 26, 'F');
+  doc.setFillColor(237, 250, 249);
+  doc.circle(W + 6, 10, 17, 'F');
+
+  // ── Header strip (navy) ──────────────────────────────────────────
+  doc.setFillColor(...navy);
+  doc.roundedRect(0, 0, W, 14, 4, 4, 'F');
+  doc.rect(0, 10, W, 4, 'F'); // flatten bottom rounded corners
+
+  // Teal accent line
+  doc.setFillColor(...teal);
+  doc.rect(0, 14, W, 1.4, 'F');
+
+  // Logo
+  if (logoDataUrl) {
+    doc.addImage(logoDataUrl, 'JPEG', 4, 3, 8, 8);
+  }
+
+  // App name
+  doc.setTextColor(...white);
+  doc.setFontSize(10.5);
+  doc.setFont('helvetica', 'bold');
+  doc.text(appName, 14.5, 9.5);
+
+  // "STAFF ID" chip top-right
+  doc.setFillColor(...teal);
+  doc.roundedRect(W - 22, 4, 18, 5.5, 2, 2, 'F');
+  doc.setTextColor(...white);
+  doc.setFontSize(6.5);
+  doc.setFont('helvetica', 'bold');
+  doc.text('STAFF  ID', W - 13, 7.8, { align: 'center' });
+
+  // ── Photo area ───────────────────────────────────────────────────
+  const px = 4, py = 18, pw = 20, ph = 20;
+  if (photoDataUrl) {
+    doc.setFillColor(...white);
+    doc.setDrawColor(...tealMid);
+    doc.setLineWidth(0.7);
+    doc.roundedRect(px, py, pw, ph, 3, 3, 'FD');
+    const imgType = photoDataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+    doc.addImage(photoDataUrl, imgType, px + 0.8, py + 0.8, pw - 1.6, ph - 1.6);
+  } else {
+    const initials = fullName.split(' ').filter(Boolean).map(p => p[0]).join('').toUpperCase().slice(0, 2) || '??';
+    doc.setFillColor(...teal);
+    doc.roundedRect(px, py, pw, ph, 3, 3, 'F');
+    doc.setDrawColor(...tealMid);
+    doc.setLineWidth(0.7);
+    doc.roundedRect(px, py, pw, ph, 3, 3, 'S');
+    doc.setTextColor(...white);
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text(initials, px + pw / 2, py + ph / 2 + 2.8, { align: 'center' });
+  }
+
+  // ── Name & metadata ──────────────────────────────────────────────
+  const tx = 27.5;
+
+  doc.setTextColor(...textMain);
+  doc.setFontSize(10.5);
+  doc.setFont('helvetica', 'bold');
+  const dispName = fullName.length > 22 ? fullName.slice(0, 21) + '…' : fullName;
+  doc.text(dispName, tx, 23);
+
+  // Role badge
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'bold');
+  const dispRole = roleLabel.length > 18 ? roleLabel.slice(0, 17) + '…' : roleLabel;
+  const bw = Math.min(doc.getTextWidth(dispRole) + 9, W - tx - 4);
+  doc.setFillColor(...badgeRgb);
+  doc.roundedRect(tx, 25, bw, 5.5, 2, 2, 'F');
+  doc.setTextColor(...white);
+  doc.text(dispRole, tx + bw / 2, 28.8, { align: 'center' });
+
+  // Department
+  doc.setTextColor(...textSub);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  const dispDept = dept.length > 28 ? dept.slice(0, 27) + '…' : dept;
+  doc.text(dispDept, tx, 33.5);
+
+  // Email
+  doc.setFontSize(7.5);
+  const dispEmail = email.length > 30 ? email.slice(0, 29) + '…' : email;
+  doc.text(dispEmail, tx, 37.5);
+
+  // ── Divider ──────────────────────────────────────────────────────
+  doc.setDrawColor(...border);
+  doc.setLineWidth(0.3);
+  doc.line(4, 42.5, W - 4, 42.5);
+
+  // ── Footer ───────────────────────────────────────────────────────
+  doc.setTextColor(...textSub);
+  doc.setFontSize(6);
+  doc.setFont('helvetica', 'normal');
+  doc.text('EMP NO.', 4, 46.5);
+
+  doc.setTextColor(...textMain);
+  doc.setFontSize(6.5);
+  doc.setFont('helvetica', 'bold');
+  doc.text(empNo, 4, 50.5);
+
+  // Holographic verification strip
+  const hx = 46, hy = 43.5, hw = 35, hh = 9.5;
+  doc.setFillColor(232, 248, 247);
+  doc.roundedRect(hx, hy, hw, hh, 2, 2, 'F');
+
+  const shimColors = [
+    [32, 178, 170], [59, 130, 246], [139, 92, 246],
+    [236, 72, 153], [245, 158, 11], [16, 185, 129],
+  ];
+  for (let i = 0; i < 18; i++) {
+    const lx = hx + (i / 18) * hw;
+    const [r, g, b] = shimColors[i % shimColors.length];
+    doc.setDrawColor(r, g, b);
+    doc.setLineWidth(0.45);
+    doc.line(lx, hy, lx + 2.5, hy + hh);
+  }
+
+  doc.setDrawColor(...tealMid);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(hx, hy, hw, hh, 2, 2, 'S');
+
+  doc.setTextColor(60, 90, 100);
+  doc.setFontSize(5.5);
+  doc.setFont('helvetica', 'bold');
+  doc.text('VERIFIED', hx + hw / 2, hy + hh / 2 + 1, { align: 'center' });
+
+  // ── Card border ──────────────────────────────────────────────────
+  doc.setDrawColor(...border);
+  doc.setLineWidth(0.5);
+  doc.roundedRect(0.3, 0.3, W - 0.6, H - 0.6, 4, 4, 'S');
+};
+
+// ─── ID Card – Back ───────────────────────────────────────────────────────────
+
+const drawIDCardBack = ({ doc, staff, logoDataUrl, companyName, appName }) => {
+  const W = 86;
+  const H = 54;
+
+  const navy    = [15, 23, 42];
+  const teal    = [32, 178, 170];
+  const white   = [255, 255, 255];
+  const textSub = [148, 163, 184];
+  const gridLine = [20, 32, 52];
+
+  // Dark background
+  doc.setFillColor(...navy);
+  doc.roundedRect(0, 0, W, H, 4, 4, 'F');
+
+  // Subtle grid pattern
+  doc.setDrawColor(...gridLine);
+  doc.setLineWidth(0.12);
+  for (let x = 0; x <= W + 6; x += 6) doc.line(x, 0, x, H);
+  for (let y = 0; y <= H + 6; y += 6) doc.line(0, y, W, y);
+
+  // Magnetic stripe
+  doc.setFillColor(5, 8, 15);
+  doc.rect(0, 2.5, W, 8.5, 'F');
+  for (let i = 0; i < 7; i++) {
+    doc.setDrawColor(22, 35, 55);
+    doc.setLineWidth(0.5);
+    doc.line(i * 13, 2.5, i * 13, 11);
+  }
+
+  // Teal accent line below stripe
+  doc.setFillColor(...teal);
+  doc.rect(0, 11, W, 0.8, 'F');
+
+  // Logo
+  if (logoDataUrl) {
+    doc.addImage(logoDataUrl, 'JPEG', W / 2 - 4, 14, 8, 8);
+  }
+
+  // App name
+  doc.setTextColor(...teal);
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.text(appName, W / 2, 28, { align: 'center' });
+
+  // Company name
+  doc.setTextColor(...textSub);
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.text(companyName.toUpperCase(), W / 2, 32.5, { align: 'center' });
+
+  // Divider
+  doc.setDrawColor(30, 50, 72);
+  doc.setLineWidth(0.3);
+  doc.line(8, 35, W - 8, 35);
+
+  // Return instruction
+  doc.setTextColor(...textSub);
+  doc.setFontSize(6.5);
+  doc.text(`This card is the property of ${companyName}.`, W / 2, 38.5, { align: 'center' });
+  doc.text('If found, please return to the HR Department.', W / 2, 42, { align: 'center' });
+
+  // Serial number
+  const serial = staff?.id
+    ? 'SN: ' + staff.id.replace(/-/g, '').slice(0, 16).toUpperCase()
+    : '';
+  doc.setTextColor(40, 65, 85);
+  doc.setFontSize(5.5);
+  doc.setFont('helvetica', 'normal');
+  doc.text(serial, W / 2, 48, { align: 'center' });
+
+  // Card border (teal)
+  doc.setDrawColor(...teal);
+  doc.setLineWidth(0.5);
+  doc.roundedRect(0.3, 0.3, W - 0.6, H - 0.6, 4, 4, 'S');
+};
+
+// ─── Public export functions ──────────────────────────────────────────────────
 
 export const exportIDCardToPDF = async (staff, options = {}) => {
   const {
     companyName = 'RazziPay',
     appName = 'RazziStaff',
     filename,
+    includeBack = true,
   } = options;
 
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [86, 54] });
 
   let logoDataUrl = null;
-  try {
-    logoDataUrl = await getLogoDataUrl();
-  } catch {
-    logoDataUrl = null;
-  }
+  try { logoDataUrl = await getLogoDataUrl(); } catch { logoDataUrl = null; }
 
   let photoDataUrl = null;
   if (staff?.profile_photo_url) {
-    try {
-      photoDataUrl = await getRemoteImageDataUrl(staff.profile_photo_url);
-    } catch {
-      photoDataUrl = null;
-    }
+    try { photoDataUrl = await getRemoteImageDataUrl(staff.profile_photo_url); } catch { photoDataUrl = null; }
   }
 
-  drawIDCard({ doc, staff, logoDataUrl, companyName, appName, photoDataUrl });
+  drawIDCardFront({ doc, staff, logoDataUrl, companyName, appName, photoDataUrl });
+
+  if (includeBack) {
+    doc.addPage([86, 54], 'landscape');
+    drawIDCardBack({ doc, staff, logoDataUrl, companyName, appName });
+  }
 
   const safeName = (staff?.full_name || 'Staff').replace(/\s+/g, '_');
   doc.save(`${filename || `ID_Card_${safeName}`}_${new Date().toISOString().split('T')[0]}.pdf`);
@@ -270,38 +403,36 @@ export const exportIDCardsToPDF = async (staffList, options = {}) => {
   const list = Array.isArray(staffList) ? staffList : [];
   if (list.length === 0) return;
 
-  const { filename = 'ID_Cards', companyName = 'RazziPay', appName = 'RazziStaff' } = options;
+  const {
+    filename = 'ID_Cards',
+    companyName = 'RazziPay',
+    appName = 'RazziStaff',
+    includeBack = true,
+  } = options;
+
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [86, 54] });
 
   let logoDataUrl = null;
-  try {
-    logoDataUrl = await getLogoDataUrl();
-  } catch {
-    logoDataUrl = null;
-  }
+  try { logoDataUrl = await getLogoDataUrl(); } catch { logoDataUrl = null; }
 
-  for (let i = 0; i < list.length; i += 1) {
+  for (let i = 0; i < list.length; i++) {
     if (i > 0) doc.addPage([86, 54], 'landscape');
     const staff = list[i];
     let photoDataUrl = null;
     if (staff?.profile_photo_url) {
-      try {
-        photoDataUrl = await getRemoteImageDataUrl(staff.profile_photo_url);
-      } catch {
-        photoDataUrl = null;
-      }
+      try { photoDataUrl = await getRemoteImageDataUrl(staff.profile_photo_url); } catch { photoDataUrl = null; }
     }
-    drawIDCard({ doc, staff, logoDataUrl, companyName, appName, photoDataUrl });
+    drawIDCardFront({ doc, staff, logoDataUrl, companyName, appName, photoDataUrl });
+
+    if (includeBack) {
+      doc.addPage([86, 54], 'landscape');
+      drawIDCardBack({ doc, staff, logoDataUrl, companyName, appName });
+    }
   }
 
   doc.save(`${filename}_${new Date().toISOString().split('T')[0]}.pdf`);
 };
 
-/**
- * Exports data to DOCX (Word document) and triggers download
- * @param {Array} data - Array of objects
- * @param {Object} options - { title, headers, filename, companyName, appName }
- */
 export const exportToDocx = async (data, options = {}) => {
   const {
     title = 'RazziStaff Report',

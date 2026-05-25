@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-export default function useTimedLoading(isLoading, timeoutMs = 6000) {
+export default function useTimedLoading(isLoading, timeoutMs = 3000) {
   const [timedOut, setTimedOut] = useState(false);
 
   useEffect(() => {

@@ -132,32 +132,33 @@ export default function StaffProfile() {
     Emergency_Phone: staff?.emergency_contact_phone,
   }];
 
-  const handleExportProfile = async (format) => {
+  const handleExportProfile = async (fmt) => {
     const safeName = (staff.full_name || 'Staff').replace(/\s+/g, '_');
-    if (format === 'csv') {
-      exportToCSV(profileData, `Staff_Profile_${safeName}`);
-    } else if (format === 'docx') {
-      await exportToDocx(profileData, {
-        title: `Staff Profile: ${staff.full_name}`,
-        filename: `Staff_Profile_${safeName}`,
-        headers: ['Name', 'Email', 'Phone', 'Department', 'Role', 'Joined', 'Address'],
+    try {
+      if (fmt === 'csv') {
+        exportToCSV(profileData, `Staff_Profile_${safeName}`);
+      } else if (fmt === 'docx') {
+        await exportToDocx(profileData, {
+          title: `Staff Profile: ${staff.full_name}`,
+          filename: `Staff_Profile_${safeName}`,
+          headers: ['Name', 'Email', 'Phone', 'Department', 'Role', 'Joined', 'Address'],
+        });
+      } else {
+        await exportToPDF(profileData, {
+          title: `Staff Profile: ${staff.full_name}`,
+          filename: `Staff_Profile_${safeName}`,
+          headers: ['Name', 'Email', 'Phone', 'Department', 'Role', 'Joined'],
+        });
+      }
+      await logAction({
+        actionType: 'EXPORT', entityType: 'StaffProfile',
+        entityId: id, entityName: staff.full_name,
+        notes: `Exported staff profile as ${fmt.toUpperCase()}`
       });
-    } else {
-      exportToPDF(profileData, {
-        title: `Staff Profile: ${staff.full_name}`,
-        filename: `Staff_Profile_${safeName}`,
-        headers: ['Name', 'Email', 'Phone', 'Department', 'Role', 'Joined'],
-      });
+      toast.success(`Exported as ${fmt.toUpperCase()}`);
+    } catch (err) {
+      toast.error(err?.message || 'Export failed');
     }
-
-    await logAction({
-      actionType: 'EXPORT',
-      entityType: 'StaffProfile',
-      entityId: id,
-      entityName: staff.full_name,
-      notes: `Exported staff profile as ${format.toUpperCase()}`
-    });
-    toast.success(`Exported as ${format.toUpperCase()}`);
   };
 
   const handleGenerateIdCard = async () => {

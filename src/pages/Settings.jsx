@@ -152,7 +152,7 @@ export default function Settings() {
       if (!trimmed.full_name) throw new Error('Full name is required.');
       await entities.StaffProfile.update(staffProfile.id, trimmed);
       await logAction({
-        actionType: 'PROFILE_UPDATE',
+        actionType: 'UPDATE',
         entityType: 'StaffProfile',
         entityId: staffProfile.id,
         entityName: trimmed.full_name,
@@ -258,11 +258,22 @@ export default function Settings() {
       toast.error('Staff profile not found');
       return;
     }
-    
+
+    const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    const MAX_SIZE_MB = 5;
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      toast.error('Only JPEG, PNG, WebP, or GIF images are allowed');
+      return;
+    }
+    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+      toast.error(`Image must be smaller than ${MAX_SIZE_MB}MB`);
+      return;
+    }
+
     setUploading(true);
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${staffProfile.id}/avatar-${Date.now()}.${fileExt}`;
+      const ext = file.type.split('/')[1] || 'jpg';
+      const fileName = `${staffProfile.id}/avatar-${Date.now()}.${ext}`;
       
       const { data, error } = await supabase.storage
         .from('staff-avatars')
@@ -333,23 +344,13 @@ export default function Settings() {
       {/* My Account */}
       <Section title="My Account" icon={User}>
         <div className="flex flex-col sm:flex-row items-center gap-6">
-          <div className="relative group">
+          <div className="relative">
             <Avatar className="h-20 w-20 ring-4 ring-primary/10">
               <AvatarImage src={avatarUrl} alt={displayName} />
               <AvatarFallback className="bg-primary/10 text-primary text-xl font-bold">
                 {initials}
               </AvatarFallback>
             </Avatar>
-            <label className="absolute inset-0 flex items-center justify-center bg-black/40 text-white rounded-full opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
-              <Upload className="w-5 h-5" />
-              <input 
-                type="file" 
-                className="hidden" 
-                accept="image/*" 
-                onChange={e => e.target.files?.[0] && uploadAvatar(e.target.files[0])}
-                disabled={uploading}
-              />
-            </label>
             {uploading && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full">
                 <Loader2 className="w-5 h-5 text-white animate-spin" />
@@ -365,13 +366,13 @@ export default function Settings() {
             </div>
             <div className="mt-3">
               <Button asChild variant="outline" size="sm" disabled={uploading || !staffProfile}>
-                <label className="cursor-pointer">
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload Photo
+                <label className="cursor-pointer flex items-center gap-2">
+                  {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                  {uploading ? 'Uploading...' : 'Upload Photo'}
                   <input
                     type="file"
                     className="hidden"
-                    accept="image/*"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
                     onChange={e => e.target.files?.[0] && uploadAvatar(e.target.files[0])}
                     disabled={uploading || !staffProfile}
                   />

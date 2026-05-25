@@ -117,7 +117,7 @@ export default function WorkflowReports() {
     });
   }, [reports, search, statusFilter, reviewFilter, dateFilter]);
 
-  const handleExport = async (format) => {
+  const handleExport = async (fmt) => {
     const dataToExport = filtered.map(r => ({
       Staff: r.staff_name,
       Date: r.report_date,
@@ -125,31 +125,23 @@ export default function WorkflowReports() {
       Priority: r.priority,
       Status: r.status,
       Review: r.review_status,
-      Hours: r.hours_worked
+      Hours: r.hours_worked,
     }));
+    const exportHeaders = ['Staff', 'Date', 'Task', 'Priority', 'Status', 'Review', 'Hours'];
 
-    if (format === 'csv') {
-      exportToCSV(dataToExport, 'Workflow_Reports');
-    } else if (format === 'docx') {
-      await exportToDocx(dataToExport, {
-        title: 'Daily Workflow Reports',
-        filename: 'Workflow_Reports',
-        headers: ['Staff', 'Date', 'Task', 'Priority', 'Status', 'Review', 'Hours'],
-      });
-    } else {
-      exportToPDF(dataToExport, {
-        title: 'Daily Workflow Reports',
-        filename: 'Workflow_Reports',
-        headers: ['Staff', 'Date', 'Task', 'Priority', 'Status', 'Review', 'Hours'],
-      });
+    try {
+      if (fmt === 'csv') {
+        exportToCSV(dataToExport, 'Workflow_Reports');
+      } else if (fmt === 'docx') {
+        await exportToDocx(dataToExport, { title: 'Daily Workflow Reports', filename: 'Workflow_Reports', headers: exportHeaders });
+      } else {
+        await exportToPDF(dataToExport, { title: 'Daily Workflow Reports', filename: 'Workflow_Reports', headers: exportHeaders });
+      }
+      await logAction({ actionType: 'EXPORT', entityType: 'DailyWorkflowReport', notes: `Exported ${filtered.length} reports as ${fmt.toUpperCase()}` });
+      toast.success(`Exported as ${fmt.toUpperCase()}`);
+    } catch (err) {
+      toast.error(err?.message || 'Export failed');
     }
-
-    await logAction({
-      actionType: 'EXPORT',
-      entityType: 'DailyWorkflowReport',
-      notes: `Exported ${filtered.length} reports as ${format.toUpperCase()}`
-    });
-    toast.success(`Exported as ${format.toUpperCase()}`);
   };
 
   const updateField = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
