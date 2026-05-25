@@ -247,3 +247,12 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.link_or_create_staff_profile(TEXT) TO authenticated;
+
+-- STEP 14: Add evidence_url column for image evidence on workflow reports
+ALTER TABLE public.daily_workflow_reports
+  ADD COLUMN IF NOT EXISTS evidence_url TEXT;
+
+-- Allow public read access to workflow evidence images stored in staff-documents bucket
+-- (Only needed if your bucket policies don't already cover this path)
+-- INSERT INTO storage.buckets (id, name, public) VALUES ('staff-documents', 'staff-documents', true)
+-- ON CONFLICT (id) DO NOTHING;

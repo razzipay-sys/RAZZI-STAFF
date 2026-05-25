@@ -104,6 +104,10 @@
     },
     "next_action": {
       "type": "string"
+    },
+    "evidence_url": {
+      "type": "string",
+      "description": "Public URL of uploaded evidence/proof image"
     }
   },
   "required": [

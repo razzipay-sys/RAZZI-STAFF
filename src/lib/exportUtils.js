@@ -433,6 +433,208 @@ export const exportIDCardsToPDF = async (staffList, options = {}) => {
   doc.save(`${filename}_${new Date().toISOString().split('T')[0]}.pdf`);
 };
 
+// ─── Single Workflow Report Export ───────────────────────────────────────────
+
+export const exportSingleReportToPDF = async (report, options = {}) => {
+  const { companyName = 'RazziPay', appName = 'RazziStaff' } = options;
+
+  const doc = new jsPDF();
+  let logoDataUrl = null;
+  try { logoDataUrl = await getLogoDataUrl(); } catch { logoDataUrl = null; }
+
+  const primary = [32, 178, 170];
+  const pageW = doc.internal.pageSize.getWidth();
+
+  // Header
+  if (logoDataUrl) doc.addImage(logoDataUrl, 'JPEG', 14, 8, 12, 12);
+  doc.setFontSize(13); doc.setTextColor(...primary); doc.setFont('helvetica', 'bold');
+  doc.text(appName, 30, 13);
+  doc.setFontSize(8); doc.setTextColor(90); doc.setFont('helvetica', 'normal');
+  doc.text(`${companyName} • Daily Workflow Report`, 30, 19);
+  doc.setFontSize(7); doc.setTextColor(130);
+  doc.text(`Generated: ${new Date().toLocaleString()}`, pageW - 14, 19, { align: 'right' });
+  doc.setDrawColor(...primary); doc.setLineWidth(0.6);
+  doc.line(14, 24, pageW - 14, 24);
+
+  // Title
+  doc.setFontSize(15); doc.setTextColor(15, 23, 42); doc.setFont('helvetica', 'bold');
+  doc.text(report.staff_name || 'Staff Report', 14, 33);
+  doc.setFontSize(9); doc.setTextColor(100); doc.setFont('helvetica', 'normal');
+  const meta = [
+    report.report_date,
+    report.department,
+    report.work_mode_for_day,
+    report.hours_worked ? `${report.hours_worked}h` : null,
+  ].filter(Boolean).join('  •  ');
+  doc.text(meta, 14, 39);
+
+  // Status chips (text)
+  let chipX = 14;
+  const chipY = 46;
+  const chips = [
+    { label: report.status, color: [32, 178, 170] },
+    { label: report.review_status, color: [59, 130, 246] },
+    { label: report.priority, color: [245, 158, 11] },
+  ].filter(c => c.label);
+  chips.forEach(({ label, color }) => {
+    doc.setFillColor(...color);
+    const w = doc.getTextWidth(label) + 6;
+    doc.roundedRect(chipX, chipY - 3.5, w, 5, 1.5, 1.5, 'F');
+    doc.setTextColor(255); doc.setFontSize(7); doc.setFont('helvetica', 'bold');
+    doc.text(label, chipX + w / 2, chipY, { align: 'center' });
+    chipX += w + 3;
+  });
+
+  let y = 58;
+  const checkPage = () => { if (y > 265) { doc.addPage(); y = 20; } };
+
+  const section = (title, content) => {
+    if (!content) return;
+    checkPage();
+    doc.setFontSize(7.5); doc.setTextColor(100); doc.setFont('helvetica', 'bold');
+    doc.text(title.toUpperCase(), 14, y);
+    y += 4;
+    doc.setDrawColor(220); doc.setLineWidth(0.2); doc.line(14, y, pageW - 14, y);
+    y += 4;
+    doc.setFontSize(9); doc.setTextColor(30); doc.setFont('helvetica', 'normal');
+    const lines = doc.splitTextToSize(String(content), pageW - 28);
+    doc.text(lines, 14, y);
+    y += lines.length * 5 + 6;
+    checkPage();
+  };
+
+  section('Task Assigned', report.assigned_task);
+  section('Work Done', report.work_done);
+  section('Blockers / Challenges', report.blockers);
+  section('Plan for Tomorrow', report.next_action);
+
+  if (report.clock_in_time || report.clock_out_time) {
+    section('Time', [
+      report.clock_in_time ? `Clock In: ${report.clock_in_time}` : '',
+      report.clock_out_time ? `Clock Out: ${report.clock_out_time}` : '',
+    ].filter(Boolean).join('   '));
+  }
+
+  if (report.proof_link) section('Proof Link', report.proof_link);
+
+  if (report.supervisor_name) {
+    checkPage();
+    doc.setFontSize(7.5); doc.setTextColor(100); doc.setFont('helvetica', 'bold');
+    doc.text('SUPERVISOR REVIEW', 14, y); y += 4;
+    doc.setDrawColor(220); doc.setLineWidth(0.2); doc.line(14, y, pageW - 14, y); y += 4;
+    doc.setFontSize(9); doc.setTextColor(30); doc.setFont('helvetica', 'normal');
+    doc.text(`Reviewed by: ${report.supervisor_name}`, 14, y); y += 6;
+    if (report.supervisor_comment) {
+      const lines = doc.splitTextToSize(report.supervisor_comment, pageW - 28);
+      doc.text(lines, 14, y); y += lines.length * 5 + 4;
+    }
+  }
+
+  // Evidence image
+  if (report.evidence_url) {
+    try {
+      const imgData = await getRemoteImageDataUrl(report.evidence_url);
+      checkPage();
+      if (y > 200) { doc.addPage(); y = 20; }
+      doc.setFontSize(7.5); doc.setTextColor(100); doc.setFont('helvetica', 'bold');
+      doc.text('EVIDENCE IMAGE', 14, y); y += 4;
+      doc.setDrawColor(220); doc.setLineWidth(0.2); doc.line(14, y, pageW - 14, y); y += 4;
+      const imgW = pageW - 28;
+      const imgH = 65;
+      doc.addImage(imgData, 'JPEG', 14, y, imgW, imgH);
+      y += imgH + 6;
+    } catch { /* skip if image unavailable */ }
+  }
+
+  // Footer
+  doc.setFontSize(7); doc.setTextColor(160);
+  doc.text(`${appName} • ${companyName}`, 14, doc.internal.pageSize.getHeight() - 8);
+
+  const safeName = (report.staff_name || 'Report').replace(/\s+/g, '_');
+  const dateStr = report.report_date || new Date().toISOString().split('T')[0];
+  doc.save(`Report_${safeName}_${dateStr}.pdf`);
+};
+
+export const exportSingleReportToDocx = async (report, options = {}) => {
+  const { companyName = 'RazziPay', appName = 'RazziStaff' } = options;
+  const primary = '20B2AA';
+
+  const field = (label, value) => {
+    if (!value) return null;
+    return new Paragraph({
+      children: [
+        new TextRun({ text: `${label}: `, bold: true, size: 20, color: '444444' }),
+        new TextRun({ text: String(value), size: 20 }),
+      ],
+      spacing: { after: 80 },
+    });
+  };
+
+  const heading = (text) => new Paragraph({
+    children: [new TextRun({ text, bold: true, size: 22, color: primary })],
+    spacing: { before: 200, after: 80 },
+    border: { bottom: { color: 'DDDDDD', size: 4, space: 4, style: 'single' } },
+  });
+
+  const sections = [
+    new Paragraph({
+      children: [
+        new TextRun({ text: appName, bold: true, size: 40, color: primary }),
+        new TextRun({ text: `  |  ${companyName}`, size: 24, color: '888888' }),
+      ],
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: `Generated: ${new Date().toLocaleString()}`, size: 16, color: 'AAAAAA' })],
+    }),
+    new Paragraph({ text: '' }),
+    new Paragraph({
+      heading: HeadingLevel.HEADING_1,
+      children: [new TextRun({ text: `Daily Workflow Report`, bold: true, color: '1A1A2E' })],
+    }),
+    new Paragraph({ text: '' }),
+    field('Staff', report.staff_name),
+    field('Department', report.department),
+    field('Report Date', report.report_date),
+    field('Work Mode', report.work_mode_for_day),
+    field('Hours Worked', report.hours_worked ? `${report.hours_worked}h` : null),
+    field('Clock In', report.clock_in_time),
+    field('Clock Out', report.clock_out_time),
+    field('Priority', report.priority),
+    field('Status', report.status),
+    field('Review Status', report.review_status),
+    field('Compliance Status', report.compliance_status),
+    new Paragraph({ text: '' }),
+    heading('Task & Work'),
+    field('Task Assigned', report.assigned_task),
+    field('Work Done', report.work_done),
+    heading('Blockers & Next Steps'),
+    field('Blockers / Challenges', report.blockers || 'None'),
+    field('Plan for Tomorrow', report.next_action),
+    report.proof_link ? heading('Proof Link') : null,
+    field('Proof Link', report.proof_link),
+    report.supervisor_name ? heading('Supervisor Review') : null,
+    field('Reviewed By', report.supervisor_name),
+    field('Supervisor Comment', report.supervisor_comment),
+    report.evidence_url ? heading('Evidence') : null,
+    report.evidence_url ? new Paragraph({
+      children: [new TextRun({ text: `Evidence image: ${report.evidence_url}`, size: 18, color: primary })],
+    }) : null,
+  ].filter(Boolean);
+
+  const doc = new Document({ sections: [{ children: sections }] });
+  const blob = await Packer.toBlob(doc);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  const safeName = (report.staff_name || 'Report').replace(/\s+/g, '_');
+  const dateStr = report.report_date || new Date().toISOString().split('T')[0];
+  link.download = `Report_${safeName}_${dateStr}.docx`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
 export const exportToDocx = async (data, options = {}) => {
   const {
     title = 'RazziStaff Report',
