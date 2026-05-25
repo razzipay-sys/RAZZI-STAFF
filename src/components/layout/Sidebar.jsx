@@ -1,11 +1,12 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
-  LayoutDashboard, 
-  Users, 
-  FileText, 
-  ClipboardList, 
-  Settings, 
+  LayoutDashboard,
+  Users,
+  FileText,
+  ClipboardList,
+  ClipboardCheck,
+  Settings,
   ChevronLeft,
   ChevronRight,
   DollarSign,
@@ -50,11 +51,17 @@ const navItems = [
     href: '/salary',
     permission: 'canViewSalary'
   },
-  { 
-    title: 'Workflow Reports', 
-    icon: ClipboardList, 
+  {
+    title: 'Workflow Reports',
+    icon: ClipboardList,
     href: '/workflow',
     permission: 'canViewWorkflow'
+  },
+  {
+    title: 'Staff Reports',
+    icon: ClipboardCheck,
+    href: '/admin/reports',
+    permission: 'canViewAuditLogs',
   },
   { 
     title: 'HR Calendar', 

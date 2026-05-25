@@ -23,6 +23,7 @@ import AuditLogs from './pages/AuditLogs';
 import AccessControl from './pages/AccessControl';
 import Recommendations from './pages/Recommendations';
 import Settings from './pages/Settings';
+import AdminReports from './pages/AdminReports';
 import PermissionGuard from './components/auth/PermissionGuard';
 
 const AuthenticatedApp = () => {
@@ -58,6 +59,7 @@ const AuthenticatedApp = () => {
         <Route path="/workflow" element={<PermissionGuard permission="canViewWorkflow"><WorkflowReports /></PermissionGuard>} />
         <Route path="/calendar" element={<HRCalendar />} />
         <Route path="/analytics" element={<PermissionGuard adminOnly><Analytics /></PermissionGuard>} />
+        <Route path="/admin/reports" element={<PermissionGuard adminOnly><AdminReports /></PermissionGuard>} />
         <Route path="/audit-logs" element={<PermissionGuard permission="canViewAuditLogs"><AuditLogs /></PermissionGuard>} />
         <Route path="/access-control" element={<PermissionGuard permission="canManageRoles"><AccessControl /></PermissionGuard>} />
         <Route path="/recommendations" element={<Recommendations />} />
